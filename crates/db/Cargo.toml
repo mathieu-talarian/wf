@@ -1,0 +1,29 @@
+[package]
+name = "wf-db"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+wf-core = { workspace = true }
+sea-orm = { version = "1.1", default-features = false, features = [
+    "sqlx-postgres",
+    "runtime-tokio-rustls",
+    "macros",
+    "with-chrono",
+    "with-json",
+    "with-uuid",
+] }
+# Pinned to the same minor SeaORM depends on, so the PgPool type unifies.
+sqlx = { version = "0.8", default-features = false, features = [
+    "postgres",
+    "runtime-tokio-rustls",
+] }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+# Phase 0 spike harness (examples/phase0.rs).
+tokio = { workspace = true }
+anyhow = { workspace = true }
+base64 = { workspace = true }

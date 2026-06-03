@@ -1,0 +1,39 @@
+[workspace]
+resolver = "2"
+members = ["crates/core", "crates/db", "crates/github", "crates/jira", "crates/api"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "UNLICENSED"
+
+[workspace.dependencies]
+# Internal crates
+wf-core = { path = "crates/core" }
+wf-db = { path = "crates/db" }
+wf-github = { path = "crates/github" }
+wf-jira = { path = "crates/jira" }
+
+# HTTP server
+actix-web = "4"
+actix-cors = "0.7"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Errors
+thiserror = "2"
+anyhow = "1"
+
+# Crypto
+aes-gcm = "0.10"
+base64 = "0.22"
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# Logging / tracing
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }
