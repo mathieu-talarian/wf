@@ -3,10 +3,12 @@
 //! cipher, the DB connection, and `GET /me`.
 
 mod auth;
+mod dto;
 mod error;
 mod github;
 mod jira;
 mod middleware;
+mod openapi;
 mod routes;
 mod state;
 

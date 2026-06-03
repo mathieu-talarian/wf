@@ -17,53 +17,53 @@ use wf_db::repositories::github_pat;
 use crate::github::{activity, dashboard, pat};
 use crate::state::AppState;
 
-#[derive(Deserialize)]
-struct TokenBody {
+#[derive(Deserialize, utoipa::ToSchema)]
+pub(crate) struct TokenBody {
     token: String,
 }
 
 #[derive(Deserialize)]
-struct DashboardQuery {
+pub(crate) struct DashboardQuery {
     tab: Option<String>,
 }
 
 #[derive(Deserialize)]
-struct QueueQuery {
+pub(crate) struct QueueQuery {
     key: String,
 }
 
-#[derive(Deserialize)]
-struct ReposBody {
+#[derive(Deserialize, utoipa::ToSchema)]
+pub(crate) struct ReposBody {
     repos: Vec<String>,
 }
 
 #[derive(Deserialize)]
-struct PullQuery {
+pub(crate) struct PullQuery {
     owner: String,
     repo: String,
     number: String,
 }
 
-#[derive(Deserialize)]
-struct PullsBody {
+#[derive(Deserialize, utoipa::ToSchema)]
+pub(crate) struct PullsBody {
     refs: Vec<GithubPullRef>,
 }
 
 #[derive(Deserialize)]
-struct RepoQuery {
+pub(crate) struct RepoQuery {
     owner: String,
     repo: String,
 }
 
 #[derive(Deserialize)]
-struct WorkflowInputsQuery {
+pub(crate) struct WorkflowInputsQuery {
     owner: String,
     repo: String,
     path: String,
 }
 
 #[derive(Deserialize)]
-struct WorkflowRunsQuery {
+pub(crate) struct WorkflowRunsQuery {
     owner: String,
     repo: String,
     #[serde(rename = "workflowId")]
@@ -75,8 +75,8 @@ fn ref_of(owner: &str, repo: &str) -> RepoRef {
     RepoRef { owner: owner.to_string(), repo: repo.to_string() }
 }
 
-#[derive(Deserialize)]
-struct DispatchBody {
+#[derive(Deserialize, utoipa::ToSchema)]
+pub(crate) struct DispatchBody {
     owner: String,
     repo: String,
     #[serde(rename = "workflowId")]
@@ -86,8 +86,8 @@ struct DispatchBody {
     inputs: HashMap<String, String>,
 }
 
-#[derive(Deserialize)]
-struct CreatePullBody {
+#[derive(Deserialize, utoipa::ToSchema)]
+pub(crate) struct CreatePullBody {
     owner: String,
     repo: String,
     base: String,
@@ -97,24 +97,24 @@ struct CreatePullBody {
     body: Option<String>,
 }
 
-#[derive(Deserialize)]
-struct MergePullBody {
+#[derive(Deserialize, utoipa::ToSchema)]
+pub(crate) struct MergePullBody {
     owner: String,
     repo: String,
     number: i64,
     method: GithubMergeMethod,
 }
 
-#[derive(Deserialize)]
-struct ClosePullBody {
+#[derive(Deserialize, utoipa::ToSchema)]
+pub(crate) struct ClosePullBody {
     owner: String,
     repo: String,
     number: i64,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
-struct SetFavoritesBody {
+pub(crate) struct SetFavoritesBody {
     repo_full_name: String,
     workflow_ids: Vec<i64>,
 }
@@ -123,14 +123,24 @@ fn user_id(user: &AuthUser) -> Result<Uuid, AppError> {
     Uuid::parse_str(&user.0.id).map_err(|e| AppError::internal(anyhow::anyhow!(e)))
 }
 
+#[utoipa::path(
+    get, path = "/api/me/github", operation_id = "githubStatus", tag = "github",
+    security(("bearer" = [])),
+    responses((status = 200, body = crate::github::summary::GithubConnectionSummary))
+)]
 /// GET /me/github — connection summary.
-async fn status(state: web::Data<AppState>, user: AuthUser) -> Result<HttpResponse, AppError> {
+pub(crate) async fn status(state: web::Data<AppState>, user: AuthUser) -> Result<HttpResponse, AppError> {
     let summary = pat::status(&state, user_id(&user)?).await?;
     Ok(HttpResponse::Ok().json(summary))
 }
 
+#[utoipa::path(
+    post, path = "/api/me/github/token", operation_id = "githubConnect", tag = "github",
+    security(("bearer" = [])), request_body = TokenBody,
+    responses((status = 200, body = crate::github::summary::GithubConnectionSummary))
+)]
 /// POST /me/github/token — validate against GitHub, then store.
-async fn connect(
+pub(crate) async fn connect(
     state: web::Data<AppState>,
     user: AuthUser,
     body: web::Json<TokenBody>,
@@ -139,20 +149,36 @@ async fn connect(
     Ok(HttpResponse::Ok().json(summary))
 }
 
+#[utoipa::path(
+    post, path = "/api/me/github/token/validate", operation_id = "githubValidate", tag = "github",
+    security(("bearer" = [])),
+    responses((status = 200, body = crate::github::summary::GithubConnectionSummary))
+)]
 /// POST /me/github/token/validate — re-validate the stored token.
-async fn validate(state: web::Data<AppState>, user: AuthUser) -> Result<HttpResponse, AppError> {
+pub(crate) async fn validate(state: web::Data<AppState>, user: AuthUser) -> Result<HttpResponse, AppError> {
     let summary = pat::validate(&state, user_id(&user)?).await?;
     Ok(HttpResponse::Ok().json(summary))
 }
 
+#[utoipa::path(
+    delete, path = "/api/me/github", operation_id = "githubDisconnect", tag = "github",
+    security(("bearer" = [])),
+    responses((status = 200, body = crate::dto::DisconnectedResponse))
+)]
 /// DELETE /me/github — disconnect; clears caches.
-async fn disconnect(state: web::Data<AppState>, user: AuthUser) -> Result<HttpResponse, AppError> {
+pub(crate) async fn disconnect(state: web::Data<AppState>, user: AuthUser) -> Result<HttpResponse, AppError> {
     pat::disconnect(&state, user_id(&user)?).await?;
     Ok(HttpResponse::Ok().json(serde_json::json!({ "disconnected": true })))
 }
 
+#[utoipa::path(
+    get, path = "/api/me/github/dashboard", operation_id = "githubDashboard", tag = "github",
+    security(("bearer" = [])),
+    params(("tab" = Option<String>, Query, description = "Queue tab (default assigned)")),
+    responses((status = 200, body = wf_github::GithubDashboard))
+)]
 /// GET /me/github/dashboard?tab= — SWR dashboard (counts + active queue).
-async fn dashboard_route(
+pub(crate) async fn dashboard_route(
     state: web::Data<AppState>,
     user: AuthUser,
     q: web::Query<DashboardQuery>,
@@ -166,8 +192,14 @@ async fn dashboard_route(
     Ok(HttpResponse::Ok().json(d))
 }
 
+#[utoipa::path(
+    get, path = "/api/me/github/queue", operation_id = "githubQueue", tag = "github",
+    security(("bearer" = [])),
+    params(("key" = String, Query, description = "Queue key")),
+    responses((status = 200, body = wf_github::dashboard::types::GithubPullRequestQueue))
+)]
 /// GET /me/github/queue?key= — a single queue's PRs.
-async fn queue_route(
+pub(crate) async fn queue_route(
     state: web::Data<AppState>,
     user: AuthUser,
     q: web::Query<QueueQuery>,
@@ -178,14 +210,24 @@ async fn queue_route(
     Ok(HttpResponse::Ok().json(r))
 }
 
+#[utoipa::path(
+    get, path = "/api/me/github/repos", operation_id = "githubRepos", tag = "github",
+    security(("bearer" = [])),
+    responses((status = 200, body = crate::github::dashboard::RepoSelection))
+)]
 /// GET /me/github/repos — available repos + current selection.
-async fn repos_route(state: web::Data<AppState>, user: AuthUser) -> Result<HttpResponse, AppError> {
+pub(crate) async fn repos_route(state: web::Data<AppState>, user: AuthUser) -> Result<HttpResponse, AppError> {
     let r = dashboard::list_repos(&state, user_id(&user)?).await?;
     Ok(HttpResponse::Ok().json(r))
 }
 
+#[utoipa::path(
+    put, path = "/api/me/github/repos", operation_id = "githubSetRepos", tag = "github",
+    security(("bearer" = [])), request_body = ReposBody,
+    responses((status = 200, body = crate::github::summary::GithubConnectionSummary))
+)]
 /// PUT /me/github/repos — set selection; nulls snapshot, clears caches.
-async fn set_repos_route(
+pub(crate) async fn set_repos_route(
     state: web::Data<AppState>,
     user: AuthUser,
     body: web::Json<ReposBody>,
@@ -194,8 +236,18 @@ async fn set_repos_route(
     Ok(HttpResponse::Ok().json(s))
 }
 
+#[utoipa::path(
+    get, path = "/api/me/github/pull", operation_id = "githubPull", tag = "github",
+    security(("bearer" = [])),
+    params(
+        ("owner" = String, Query, description = "Repo owner"),
+        ("repo" = String, Query, description = "Repo name"),
+        ("number" = String, Query, description = "PR number")
+    ),
+    responses((status = 200, body = wf_github::GithubPullRequestEnrichment))
+)]
 /// GET /me/github/pull?owner&repo&number — enrich a single PR.
-async fn pull_route(
+pub(crate) async fn pull_route(
     state: web::Data<AppState>,
     user: AuthUser,
     q: web::Query<PullQuery>,
@@ -209,8 +261,13 @@ async fn pull_route(
     Ok(HttpResponse::Ok().json(e))
 }
 
+#[utoipa::path(
+    post, path = "/api/me/github/pulls/enrich", operation_id = "githubPullsEnrich", tag = "github",
+    security(("bearer" = [])), request_body = PullsBody,
+    responses((status = 200, body = Vec<wf_github::GithubPullEnrichmentResult>))
+)]
 /// POST /me/github/pulls/enrich — batch-enrich the supplied PR refs.
-async fn pulls_route(
+pub(crate) async fn pulls_route(
     state: web::Data<AppState>,
     user: AuthUser,
     body: web::Json<PullsBody>,
@@ -219,8 +276,13 @@ async fn pulls_route(
     Ok(HttpResponse::Ok().json(r))
 }
 
+#[utoipa::path(
+    get, path = "/api/me/github/branches", operation_id = "githubBranches", tag = "github",
+    security(("bearer" = [])),
+    responses((status = 200, body = Vec<wf_github::GithubRepoBranches>))
+)]
 /// GET /me/github/branches — branch→PR prompts across selected repos.
-async fn branches_route(
+pub(crate) async fn branches_route(
     state: web::Data<AppState>,
     user: AuthUser,
 ) -> Result<HttpResponse, AppError> {
@@ -228,8 +290,13 @@ async fn branches_route(
     Ok(HttpResponse::Ok().json(r))
 }
 
+#[utoipa::path(
+    get, path = "/api/me/github/workflows", operation_id = "githubWorkflows", tag = "github",
+    security(("bearer" = [])),
+    responses((status = 200, body = Vec<wf_github::GithubRepoWorkflows>))
+)]
 /// GET /me/github/workflows — active workflows across selected repos.
-async fn workflows_route(
+pub(crate) async fn workflows_route(
     state: web::Data<AppState>,
     user: AuthUser,
 ) -> Result<HttpResponse, AppError> {
@@ -237,8 +304,17 @@ async fn workflows_route(
     Ok(HttpResponse::Ok().json(r))
 }
 
+#[utoipa::path(
+    get, path = "/api/me/github/workflow/inputs", operation_id = "githubWorkflowInputs", tag = "github",
+    security(("bearer" = [])),
+    params(
+        ("owner" = String, Query), ("repo" = String, Query),
+        ("path" = String, Query, description = "Workflow file path")
+    ),
+    responses((status = 200, body = wf_github::GithubWorkflowInputs))
+)]
 /// GET /me/github/workflow/inputs?owner&repo&path — workflow_dispatch inputs.
-async fn workflow_inputs_route(
+pub(crate) async fn workflow_inputs_route(
     state: web::Data<AppState>,
     user: AuthUser,
     q: web::Query<WorkflowInputsQuery>,
@@ -248,8 +324,14 @@ async fn workflow_inputs_route(
     Ok(HttpResponse::Ok().json(r))
 }
 
+#[utoipa::path(
+    get, path = "/api/me/github/repo/branches", operation_id = "githubRepoBranches", tag = "github",
+    security(("bearer" = [])),
+    params(("owner" = String, Query), ("repo" = String, Query)),
+    responses((status = 200, body = Vec<String>))
+)]
 /// GET /me/github/repo/branches?owner&repo — plain branch-name list.
-async fn repo_branches_route(
+pub(crate) async fn repo_branches_route(
     state: web::Data<AppState>,
     user: AuthUser,
     q: web::Query<RepoQuery>,
@@ -258,8 +340,14 @@ async fn repo_branches_route(
     Ok(HttpResponse::Ok().json(r))
 }
 
+#[utoipa::path(
+    get, path = "/api/me/github/repo/environments", operation_id = "githubRepoEnvironments", tag = "github",
+    security(("bearer" = [])),
+    params(("owner" = String, Query), ("repo" = String, Query)),
+    responses((status = 200, body = Vec<String>))
+)]
 /// GET /me/github/repo/environments?owner&repo — environment names.
-async fn environments_route(
+pub(crate) async fn environments_route(
     state: web::Data<AppState>,
     user: AuthUser,
     q: web::Query<RepoQuery>,
@@ -268,8 +356,17 @@ async fn environments_route(
     Ok(HttpResponse::Ok().json(r))
 }
 
+#[utoipa::path(
+    get, path = "/api/me/github/workflow/runs", operation_id = "githubWorkflowRuns", tag = "github",
+    security(("bearer" = [])),
+    params(
+        ("owner" = String, Query), ("repo" = String, Query),
+        ("workflowId" = String, Query), ("branch" = String, Query)
+    ),
+    responses((status = 200, body = Vec<wf_github::GithubWorkflowRunSummary>))
+)]
 /// GET /me/github/workflow/runs?owner&repo&workflowId&branch — recent dispatch runs.
-async fn workflow_runs_route(
+pub(crate) async fn workflow_runs_route(
     state: web::Data<AppState>,
     user: AuthUser,
     q: web::Query<WorkflowRunsQuery>,
@@ -289,8 +386,13 @@ async fn workflow_runs_route(
     Ok(HttpResponse::Ok().json(r))
 }
 
+#[utoipa::path(
+    post, path = "/api/me/github/workflow/dispatch", operation_id = "githubWorkflowDispatch", tag = "github",
+    security(("bearer" = [])), request_body = DispatchBody,
+    responses((status = 200, body = crate::dto::OkResponse))
+)]
 /// POST /me/github/workflow/dispatch — trigger a workflow_dispatch.
-async fn dispatch_route(
+pub(crate) async fn dispatch_route(
     state: web::Data<AppState>,
     user: AuthUser,
     body: web::Json<DispatchBody>,
@@ -307,8 +409,13 @@ async fn dispatch_route(
     Ok(HttpResponse::Ok().json(serde_json::json!({ "ok": true })))
 }
 
+#[utoipa::path(
+    post, path = "/api/me/github/pulls", operation_id = "githubCreatePull", tag = "github",
+    security(("bearer" = [])), request_body = CreatePullBody,
+    responses((status = 200, body = wf_github::GithubCreatePullResult))
+)]
 /// POST /me/github/pulls — create a PR.
-async fn create_pull_route(
+pub(crate) async fn create_pull_route(
     state: web::Data<AppState>,
     user: AuthUser,
     body: web::Json<CreatePullBody>,
@@ -323,8 +430,13 @@ async fn create_pull_route(
     Ok(HttpResponse::Ok().json(r))
 }
 
+#[utoipa::path(
+    post, path = "/api/me/github/pull/merge", operation_id = "githubMergePull", tag = "github",
+    security(("bearer" = [])), request_body = MergePullBody,
+    responses((status = 200, body = wf_github::GithubMergePullResult))
+)]
 /// POST /me/github/pull/merge — merge a PR.
-async fn merge_pull_route(
+pub(crate) async fn merge_pull_route(
     state: web::Data<AppState>,
     user: AuthUser,
     body: web::Json<MergePullBody>,
@@ -340,8 +452,13 @@ async fn merge_pull_route(
     Ok(HttpResponse::Ok().json(r))
 }
 
+#[utoipa::path(
+    post, path = "/api/me/github/pull/close", operation_id = "githubClosePull", tag = "github",
+    security(("bearer" = [])), request_body = ClosePullBody,
+    responses((status = 200, body = crate::dto::OkResponse))
+)]
 /// POST /me/github/pull/close — close a PR.
-async fn close_pull_route(
+pub(crate) async fn close_pull_route(
     state: web::Data<AppState>,
     user: AuthUser,
     body: web::Json<ClosePullBody>,
@@ -350,8 +467,13 @@ async fn close_pull_route(
     Ok(HttpResponse::Ok().json(serde_json::json!({ "ok": true })))
 }
 
+#[utoipa::path(
+    get, path = "/api/me/github/favorites", operation_id = "githubFavorites", tag = "github",
+    security(("bearer" = [])),
+    responses((status = 200, body = Object, description = "Map of repoFullName -> workflow ids"))
+)]
 /// GET /me/github/favorites — the user's favorite workflows per repo.
-async fn favorites_route(
+pub(crate) async fn favorites_route(
     state: web::Data<AppState>,
     user: AuthUser,
 ) -> Result<HttpResponse, AppError> {
@@ -359,8 +481,13 @@ async fn favorites_route(
     Ok(HttpResponse::Ok().json(r))
 }
 
+#[utoipa::path(
+    put, path = "/api/me/github/favorites", operation_id = "githubSetFavorites", tag = "github",
+    security(("bearer" = [])), request_body = SetFavoritesBody,
+    responses((status = 200, body = Object, description = "Map of repoFullName -> workflow ids"))
+)]
 /// PUT /me/github/favorites — set one repo's favorites; returns the full map.
-async fn set_favorites_route(
+pub(crate) async fn set_favorites_route(
     state: web::Data<AppState>,
     user: AuthUser,
     body: web::Json<SetFavoritesBody>,

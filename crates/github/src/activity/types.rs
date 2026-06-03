@@ -5,7 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct GithubBranchPrompt {
     pub name: String,
@@ -14,7 +14,7 @@ pub struct GithubBranchPrompt {
     pub compare_url: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct GithubRepoBranches {
     pub repo_full_name: String,
@@ -24,7 +24,7 @@ pub struct GithubRepoBranches {
     pub error: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct GithubWorkflowSummary {
     pub id: i64,
@@ -34,7 +34,7 @@ pub struct GithubWorkflowSummary {
     pub url: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct GithubRepoWorkflows {
     pub repo_full_name: String,
@@ -44,7 +44,7 @@ pub struct GithubRepoWorkflows {
     pub error: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum GithubWorkflowInputType {
     String,
@@ -54,7 +54,7 @@ pub enum GithubWorkflowInputType {
     Environment,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct GithubWorkflowInput {
     pub name: String,
@@ -65,7 +65,7 @@ pub struct GithubWorkflowInput {
     pub options: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct GithubWorkflowInputs {
     pub dispatchable: bool,
@@ -75,7 +75,7 @@ pub struct GithubWorkflowInputs {
 // --- Write DTOs (port of the write half of `activity/types.ts`) ---
 
 /// Body for creating a PR (port of `GithubCreatePullInputT`).
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, utoipa::ToSchema)]
 pub struct GithubCreatePullInput {
     pub base: String,
     pub head: String,
@@ -83,14 +83,14 @@ pub struct GithubCreatePullInput {
     pub body: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct GithubCreatePullResult {
     pub number: i64,
     pub url: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum GithubMergeMethod {
     Merge,
@@ -108,7 +108,7 @@ impl GithubMergeMethod {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct GithubMergePullResult {
     pub merged: bool,

@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::issues::jql::JiraQueueKey;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum JiraValidationStatus {
     Valid,
@@ -47,7 +47,7 @@ pub fn validation_status_for_http(status: Option<u16>) -> JiraValidationStatus {
 
 /// Whether a failing dashboard queue should degrade quietly (Agile/sprint
 /// features absent on a non-Software site) or surface as a real error.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum QueueErrorKind {
     FeatureUnavailable,

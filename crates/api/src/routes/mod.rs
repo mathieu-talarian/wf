@@ -10,4 +10,5 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
     me::configure(cfg);
     crate::github::routes::configure(cfg);
     crate::jira::routes::configure(cfg);
+    crate::openapi::configure(cfg);
 }

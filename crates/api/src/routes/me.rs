@@ -11,9 +11,9 @@ use crate::auth::AuthUser;
 use crate::error::AppError;
 use crate::state::AppState;
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
-struct MeResponse {
+pub(crate) struct MeResponse {
     id: String,
     email: String,
     name: Option<String>,
@@ -22,7 +22,15 @@ struct MeResponse {
     updated_at: String,
 }
 
-async fn me(state: web::Data<AppState>, user: AuthUser) -> Result<HttpResponse, AppError> {
+#[utoipa::path(
+    get,
+    path = "/api/me",
+    operation_id = "getMe",
+    tag = "me",
+    security(("bearer" = [])),
+    responses((status = 200, body = MeResponse))
+)]
+pub(crate) async fn me(state: web::Data<AppState>, user: AuthUser) -> Result<HttpResponse, AppError> {
     let row = users::upsert_from_auth(&state.db, &user.0).await?;
     let resp = MeResponse {
         id: row.id.to_string(),

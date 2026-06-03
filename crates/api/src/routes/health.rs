@@ -5,26 +5,41 @@ use actix_web::{web, HttpResponse};
 use chrono::SecondsFormat;
 use serde::Serialize;
 
-#[derive(Serialize)]
-struct HealthResponse {
-    status: &'static str,
+#[derive(Serialize, utoipa::ToSchema)]
+pub(crate) struct HealthResponse {
+    status: String,
     time: String,
 }
 
-#[derive(Serialize)]
-struct HelloResponse {
+#[derive(Serialize, utoipa::ToSchema)]
+pub(crate) struct HelloResponse {
     greeting: String,
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/health",
+    operation_id = "getHealth",
+    tag = "system",
+    responses((status = 200, body = HealthResponse))
+)]
 /// `GET /api/health` → `{ status: "ok", time: ISO8601 }`.
-async fn health() -> HttpResponse {
+pub(crate) async fn health() -> HttpResponse {
     // `Date#toISOString()` parity: millisecond precision, `Z` suffix.
     let time = chrono::Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
-    HttpResponse::Ok().json(HealthResponse { status: "ok", time })
+    HttpResponse::Ok().json(HealthResponse { status: "ok".to_string(), time })
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/hello/{name}",
+    operation_id = "getHello",
+    tag = "system",
+    params(("name" = String, Path, description = "Name to greet")),
+    responses((status = 200, body = HelloResponse))
+)]
 /// `GET /api/hello/:name` → `{ greeting: "Hello, {name}!" }`.
-async fn hello(name: web::Path<String>) -> HttpResponse {
+pub(crate) async fn hello(name: web::Path<String>) -> HttpResponse {
     HttpResponse::Ok().json(HelloResponse {
         greeting: format!("Hello, {}!", name),
     })

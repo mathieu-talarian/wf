@@ -51,6 +51,9 @@ serde_yaml = "0.9"
 # URL parsing (Jira site-URL normalization)
 url = "2"
 
+# OpenAPI (Phase 5a): code-first spec generation
+utoipa = { version = "5" }
+
 # Crypto
 aes-gcm = "0.10"
 base64 = "0.22"

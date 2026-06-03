@@ -5,7 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum GithubQueueKey {
     Assigned,
@@ -38,20 +38,20 @@ impl GithubQueueKey {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct GithubDashboardActor {
     pub login: String,
     pub avatar_url: String,
     pub url: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct GithubDashboardLabel {
     pub name: String,
     pub color: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct GithubDashboardRepository {
     pub full_name: String,
@@ -62,7 +62,7 @@ pub struct GithubDashboardRepository {
     pub default_branch: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct GithubPullRequestBasic {
     pub repository: GithubDashboardRepository,
@@ -77,7 +77,7 @@ pub struct GithubPullRequestBasic {
     pub updated_at: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct GithubQueueCount {
     pub key: GithubQueueKey,
@@ -86,7 +86,7 @@ pub struct GithubQueueCount {
     pub incomplete_results: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct GithubPullRequestQueue {
     pub key: GithubQueueKey,
@@ -97,7 +97,7 @@ pub struct GithubPullRequestQueue {
 }
 
 /// `fetchDashboard` result: counts for every queue + nodes for the active one.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DashboardData {
     pub queues: Vec<GithubQueueCount>,
@@ -105,7 +105,7 @@ pub struct DashboardData {
 }
 
 /// Account header on the dashboard response (port of `GithubAccountSummaryT`).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct GithubAccountSummary {
     pub connected: bool,
@@ -121,7 +121,7 @@ impl GithubAccountSummary {
 }
 
 /// One selectable repository (port of `GithubRepoOptionT`).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct GithubRepoOption {
     pub full_name: String,
@@ -131,7 +131,7 @@ pub struct GithubRepoOption {
 
 /// The full dashboard response (port of `GithubDashboardT`). Persisted as the
 /// `dashboard_snapshot` jsonb for cold-start SWR.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct GithubDashboard {
     pub account: GithubAccountSummary,
@@ -155,7 +155,7 @@ impl GithubDashboard {
 // `/me/github/pulls/enrich`). All serialize camelCase to match the API contract.
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum GithubApprovalState {
     Approved,
@@ -164,7 +164,7 @@ pub enum GithubApprovalState {
     Unknown,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum GithubCheckState {
     Success,
@@ -178,14 +178,14 @@ pub enum GithubCheckState {
     Unknown,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum GithubRequestedReviewerKind {
     User,
     Team,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct GithubWorkflowRunSummary {
     pub id: i64,
@@ -199,7 +199,7 @@ pub struct GithubWorkflowRunSummary {
     pub updated_at: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct GithubRequestedReviewer {
     pub name: String,
@@ -208,7 +208,7 @@ pub struct GithubRequestedReviewer {
     pub kind: GithubRequestedReviewerKind,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct GithubRequiredCheck {
     pub name: String,
@@ -219,7 +219,7 @@ pub struct GithubRequiredCheck {
 
 /// Detail-derived fields, fetched lazily per PR (port of
 /// `GithubPullRequestEnrichmentT`).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct GithubPullRequestEnrichment {
     pub repository: GithubDashboardRepository,
@@ -243,7 +243,7 @@ pub struct GithubPullRequestEnrichment {
 }
 
 /// One PR to enrich in a batch request (port of `GithubPullRefT`).
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, utoipa::ToSchema)]
 pub struct GithubPullRef {
     pub owner: String,
     pub repo: String,
@@ -252,7 +252,7 @@ pub struct GithubPullRef {
 
 /// A batch enrichment entry: the ref echoed back with its enrichment (port of
 /// `GithubPullEnrichmentResultT`).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct GithubPullEnrichmentResult {
     pub owner: String,

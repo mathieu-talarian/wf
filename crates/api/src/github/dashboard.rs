@@ -21,7 +21,7 @@ use crate::github::token_cache::CachedPat;
 use crate::state::AppState;
 
 /// `GET /me/github/repos` response.
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct RepoSelection {
     pub available: Vec<GithubRepoOption>,
     pub selected: Vec<String>,

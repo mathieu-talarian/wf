@@ -9,7 +9,7 @@ use wf_db::entities::jira_pat_connections as jira;
 
 use crate::github::summary::json_string_array;
 
-#[derive(Serialize, Default)]
+#[derive(Serialize, Default, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct JiraConnectionSummary {
     connected: bool,

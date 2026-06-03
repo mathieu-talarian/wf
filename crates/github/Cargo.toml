@@ -15,3 +15,4 @@ futures = { workspace = true }
 percent-encoding = { workspace = true }
 serde_yaml = { workspace = true }
 base64 = { workspace = true }
+utoipa = { workspace = true }

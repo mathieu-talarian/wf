@@ -7,7 +7,7 @@ use serde::Serialize;
 use serde_json::Value;
 use wf_db::entities::github_pat_connections as gh;
 
-#[derive(Serialize, Default)]
+#[derive(Serialize, Default, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct GithubConnectionSummary {
     connected: bool,

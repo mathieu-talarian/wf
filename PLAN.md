@@ -77,7 +77,7 @@ Working checklist for the remaining migration, derived from `2026-06-03-ts-to-ru
 ---
 
 ## Phase 5 — OpenAPI + web client (must ship with cutover)
-- **5a server:** `#[derive(utoipa::ToSchema)]` on DTOs, `#[utoipa::path]` on handlers, aggregate `OpenApi`, serve `GET /api/openapi.json`, bearer security scheme. Optional Swagger UI behind a dev flag.
+- **5a server:** ✅ DONE — `utoipa` 5 (`actix_extras` on wf-api only). `#[derive(ToSchema)]` on all ~60 DTOs (github/jira/api), `#[utoipa::path]` (explicit `operation_id` to avoid cross-module collisions; full `/api/...` paths) on all 48 handlers, `openapi.rs` aggregates paths + 80 schemas + bearer (`SecurityAddon` Modify) + info/tags, served at `GET /api/openapi.json`. **Live-verified**: served spec is OpenAPI 3.1.0, 41 paths / 48 operations / 80 schemas / bearer scheme. `spec_is_complete` unit test guards it. (Swagger UI dev flag: not added.)
 - **5b web:** generate typed client from the spec into `apps/web/src/lib/api.gen.ts`; rewrite `apps/web/src/lib/api.ts` (keep `buildAuthHeaders`, `ApiError` shape); remove `@elysiajs/eden`, `treaty<AppT>`, and all `server`/`server/*` type imports; CI spec-drift check; generated client must typecheck.
 
 ## Phase 6 — Parity verification

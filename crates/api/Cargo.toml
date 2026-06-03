@@ -34,3 +34,6 @@ jsonwebtoken = { workspace = true }
 sea-orm = { workspace = true }
 tokio = { workspace = true }
 dotenvy = { workspace = true }
+
+# OpenAPI (Phase 5a)
+utoipa = { workspace = true, features = ["actix_extras"] }
