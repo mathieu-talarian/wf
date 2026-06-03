@@ -54,6 +54,12 @@ url = "2"
 # OpenAPI (Phase 5a): code-first spec generation
 utoipa = { version = "5" }
 
+# OpenTelemetry OTLP trace export (spec §12; enabled when OTEL_EXPORTER_OTLP_ENDPOINT set)
+opentelemetry = "0.27"
+opentelemetry_sdk = { version = "0.27", features = ["rt-tokio"] }
+opentelemetry-otlp = { version = "0.27", default-features = false, features = ["trace", "http-proto", "reqwest-client"] }
+tracing-opentelemetry = "0.28"
+
 # Crypto
 aes-gcm = "0.10"
 base64 = "0.22"

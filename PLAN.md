@@ -88,11 +88,11 @@ Working checklist for the remaining migration, derived from `2026-06-03-ts-to-ru
 
 ---
 
-## Deferred parity TODOs (close before Phase 6)
-- 404 framework `detail` is `"Not Found"` — confirm vs Elysia's `"NOT_FOUND"`.
-- stdout/stderr log split (info→stdout, warn/error→stderr) not done — single fmt subscriber (spec §12).
-- OTEL export wiring when `OTEL_EXPORTER_OTLP_ENDPOINT` is set (spec §12).
-- Jira token cache: none today — keep decrypt-per-request for parity (spec §19.5).
+## Deferred parity TODOs
+- ✅ 404 framework `detail` now `"NOT_FOUND"` (matches Elysia) — commit `3bde8e2`.
+- ✅ stdout/stderr log split (info→stdout, warn/error→stderr) — commit `3bde8e2` (runtime-verified).
+- ✅ OTEL export wiring when `OTEL_EXPORTER_OTLP_ENDPOINT` set — `tracing-opentelemetry` + `opentelemetry-otlp` (http/protobuf, async reqwest client), batch Tokio exporter, `service.name` from `OTEL_SERVICE_NAME`. Boot-verified on/off (full export needs a live OTLP collector).
+- ✅ Jira token cache: decrypt-per-request kept for parity (spec §19.5) — done by design.
 
 ## Open decisions (from spec §19)
 - OpenAPI client generator: `openapi-typescript` vs `orval`/`openapi-fetch` (decide before 5b).

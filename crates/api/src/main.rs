@@ -28,8 +28,34 @@ use crate::auth::JwksVerifier;
 use crate::middleware::request_log::request_log;
 use crate::state::AppState;
 
+/// Builds an OTLP (http/protobuf) batch tracer when `OTEL_EXPORTER_OTLP_ENDPOINT`
+/// is set (spec §12; mirrors `@logtape/otel`). Returns `None` on misconfig so the
+/// server still starts.
+fn build_otel_tracer(endpoint: &str, service_name: &str) -> Option<opentelemetry_sdk::trace::Tracer> {
+    use opentelemetry::trace::TracerProvider as _;
+    use opentelemetry::KeyValue;
+    use opentelemetry_otlp::WithExportConfig;
+
+    let exporter = opentelemetry_otlp::SpanExporter::builder()
+        .with_http()
+        .with_endpoint(endpoint)
+        .build()
+        .ok()?;
+    let provider = opentelemetry_sdk::trace::TracerProvider::builder()
+        .with_batch_exporter(exporter, opentelemetry_sdk::runtime::Tokio)
+        .with_resource(opentelemetry_sdk::Resource::new(vec![KeyValue::new(
+            "service.name",
+            service_name.to_string(),
+        )]))
+        .build();
+    let tracer = provider.tracer("wf-api");
+    opentelemetry::global::set_tracer_provider(provider);
+    Some(tracer)
+}
+
 /// Tracing init with the spec §12 stream split: info/debug/trace → stdout,
 /// warn/error → stderr. `RUST_LOG` still overrides the `LOG_LEVEL` directive.
+/// When `OTEL_EXPORTER_OTLP_ENDPOINT` is set, also exports spans via OTLP.
 fn init_tracing(config: &Config) {
     let directive = config.log_level.tracing_directive();
     let make_filter =
@@ -46,7 +72,18 @@ fn init_tracing(config: &Config) {
         .with_filter(filter_fn(|m| matches!(*m.level(), Level::WARN | Level::ERROR)))
         .with_filter(make_filter());
 
-    tracing_subscriber::registry().with(stdout_layer).with(stderr_layer).init();
+    // `Option<Layer>` is itself a `Layer` (no-op when None).
+    let otel_layer = config
+        .otel_exporter_otlp_endpoint
+        .as_deref()
+        .and_then(|ep| build_otel_tracer(ep, &config.otel_service_name))
+        .map(|tracer| tracing_opentelemetry::layer().with_tracer(tracer));
+
+    tracing_subscriber::registry()
+        .with(stdout_layer)
+        .with(stderr_layer)
+        .with(otel_layer)
+        .init();
 }
 
 /// Default 404, emitted in the same `application/problem+json` envelope as
