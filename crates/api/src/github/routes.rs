@@ -12,6 +12,8 @@ use wf_github::{
 
 use crate::auth::AuthUser;
 use crate::error::AppError;
+use wf_db::repositories::github_pat;
+
 use crate::github::{activity, dashboard, pat};
 use crate::state::AppState;
 
@@ -108,6 +110,13 @@ struct ClosePullBody {
     owner: String,
     repo: String,
     number: i64,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SetFavoritesBody {
+    repo_full_name: String,
+    workflow_ids: Vec<i64>,
 }
 
 fn user_id(user: &AuthUser) -> Result<Uuid, AppError> {
@@ -341,6 +350,31 @@ async fn close_pull_route(
     Ok(HttpResponse::Ok().json(serde_json::json!({ "ok": true })))
 }
 
+/// GET /me/github/favorites — the user's favorite workflows per repo.
+async fn favorites_route(
+    state: web::Data<AppState>,
+    user: AuthUser,
+) -> Result<HttpResponse, AppError> {
+    let r = github_pat::get_favorites(&state.db, user_id(&user)?).await?;
+    Ok(HttpResponse::Ok().json(r))
+}
+
+/// PUT /me/github/favorites — set one repo's favorites; returns the full map.
+async fn set_favorites_route(
+    state: web::Data<AppState>,
+    user: AuthUser,
+    body: web::Json<SetFavoritesBody>,
+) -> Result<HttpResponse, AppError> {
+    let r = github_pat::set_repo_favorites(
+        &state.db,
+        user_id(&user)?,
+        &body.repo_full_name,
+        &body.workflow_ids,
+    )
+    .await?;
+    Ok(HttpResponse::Ok().json(r))
+}
+
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.route("/me/github", web::get().to(status))
         .route("/me/github/token", web::post().to(connect))
@@ -361,5 +395,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .route("/me/github/workflow/dispatch", web::post().to(dispatch_route))
         .route("/me/github/pulls", web::post().to(create_pull_route))
         .route("/me/github/pull/merge", web::post().to(merge_pull_route))
-        .route("/me/github/pull/close", web::post().to(close_pull_route));
+        .route("/me/github/pull/close", web::post().to(close_pull_route))
+        .route("/me/github/favorites", web::get().to(favorites_route))
+        .route("/me/github/favorites", web::put().to(set_favorites_route));
 }

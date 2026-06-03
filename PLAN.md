@@ -12,9 +12,9 @@ Working checklist for the remaining migration, derived from `2026-06-03-ts-to-ru
 ## Status snapshot
 - ✅ Phase 0 spikes (DB session pooler, AES-GCM on real row, JWKS ES256)
 - ✅ Phase 1 skeleton · ✅ Phase 2 auth + `/me`
-- ✅ Phase 3a GitHub client + PAT validation · ✅ 3b connection flow · ✅ 3c dashboard (data + routes + SWR) · ✅ 3c.3 PR enrichment · ✅ 3d.1 activity reads · ✅ 3d.2 activity writes
+- ✅ Phase 3 GitHub COMPLETE — 3a client+validate · 3b connection · 3c dashboard+SWR · 3c.3 PR enrichment · 3d.1 activity reads · 3d.2 activity writes · 3d.3 favorites
 - ✅ Dependency upgrade (reqwest 0.13, jsonwebtoken 10, sqlx 0.9, sea-orm 2.0-rc, getrandom 0.4)
-- **Endpoints done: 25 / 48** — `/health`, `/hello/:name`, `/me`, `/me/github` (4 conn), `/me/github/{dashboard,queue,repos}` GET + `repos` PUT, `/me/github/pull` GET + `/me/github/pulls/enrich` POST, `/me/github/{branches,workflows,workflow/inputs,workflow/runs,repo/branches,repo/environments}` GET, `/me/github/{workflow/dispatch,pulls,pull/merge,pull/close}` POST.
+- **Endpoints done: 27 / 48** — `/health`, `/hello/:name`, `/me`, `/me/github` (4 conn), `/me/github/{dashboard,queue,repos}` GET + `repos` PUT, `/me/github/pull` GET + `/me/github/pulls/enrich` POST, `/me/github/{branches,workflows,workflow/inputs,workflow/runs,repo/branches,repo/environments}` GET, `/me/github/{workflow/dispatch,pulls,pull/merge,pull/close}` POST, `/me/github/favorites` GET+PUT. (All GitHub endpoints done; Jira next.)
 
 ---
 
@@ -38,10 +38,11 @@ Working checklist for the remaining migration, derived from `2026-06-03-ts-to-ru
 - **Endpoints:** `POST /me/github/{workflow/dispatch,pulls,pull/merge,pull/close}`.
 - **Verified:** `cargo run -p wf-db --example gh_write_probe` (non-destructive) — bogus dispatch + merge both return `Write { status: 404, message: "Not Found" }` (status passthrough). Happy-path writes intentionally not live-exercised (side effects); covered by faithful port + `error.rs` mapping.
 
-### 3d.3 — Favorites  ⏳ NEXT
-- **Source:** `github/pat/favorites.ts`, `routes/favorites.ts`.
-- **Build:** `favorite_workflows` jsonb (`HashMap<String, Vec<i64>>`) repo ops.
+### 3d.3 — Favorites  ✅ DONE
+- **Source:** `github/pat/favorites.ts`, `pat/account.ts` (runGet/runSet), `routes/favorites.ts`.
+- **Built:** `wf-db github_pat.rs` — `FavoritesMap` (`HashMap<String, Vec<i64>>`), `favorites_of`/`set_repo_in_favorites` (dedupe first-wins, drop-empty), `get_favorites`/`set_repo_favorites` (no row → `DbErr::Custom` → 500, matching TS GithubDbError). 5 unit tests (ported `favorites.test.ts`). Routes GET/PUT `/me/github/favorites` in `routes.rs`.
 - **Endpoints:** `GET /me/github/favorites`, `PUT /me/github/favorites` ({repoFullName, workflowIds}).
+- **Verified:** `cargo run -p wf-db --example gh_favorites` — set [1,2,2,3]→[1,2,3], merged without touching other repos, persisted, restored original (DB unchanged).
 
 ---
 

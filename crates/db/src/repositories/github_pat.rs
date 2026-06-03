@@ -2,6 +2,8 @@
 //! operations; dashboard/favorites/snapshot writes are added in later chunks.
 //! Port of `github/pat/account.ts`.
 
+use std::collections::{HashMap, HashSet};
+
 use sea_orm::prelude::{DateTimeWithTimeZone, Expr, Uuid};
 use sea_orm::sea_query::{OnConflict, Value as SqlValue};
 use sea_orm::ActiveValue::{NotSet, Set};
@@ -156,4 +158,114 @@ pub async fn touch_last_used(db: &DatabaseConnection, user_id: Uuid) -> Result<(
         .exec(db)
         .await?;
     Ok(())
+}
+
+/// Repo-full-name → workflow ids (port of `FavoritesMapT`).
+pub type FavoritesMap = HashMap<String, Vec<i64>>;
+
+/// Decode the `favorite_workflows` jsonb (port of `favoritesOf`): null or a
+/// malformed shape both yield an empty map.
+fn favorites_from_value(value: Option<&serde_json::Value>) -> FavoritesMap {
+    value.cloned().and_then(|v| serde_json::from_value(v).ok()).unwrap_or_default()
+}
+
+pub fn favorites_of(row: &gh::Model) -> FavoritesMap {
+    favorites_from_value(row.favorite_workflows.as_ref())
+}
+
+/// Set one repo's favorites without disturbing the others (port of
+/// `setRepoInFavorites`): de-dupe (first occurrence wins), and drop the repo
+/// entirely when its list becomes empty.
+pub fn set_repo_in_favorites(
+    map: &FavoritesMap,
+    repo_full_name: &str,
+    workflow_ids: &[i64],
+) -> FavoritesMap {
+    let mut seen = HashSet::new();
+    let deduped: Vec<i64> = workflow_ids.iter().copied().filter(|id| seen.insert(*id)).collect();
+    let mut next = map.clone();
+    next.remove(repo_full_name);
+    if !deduped.is_empty() {
+        next.insert(repo_full_name.to_string(), deduped);
+    }
+    next
+}
+
+/// `GET /me/github/favorites` (port of `runGetFavorites`): empty when no row.
+pub async fn get_favorites(
+    db: &DatabaseConnection,
+    user_id: Uuid,
+) -> Result<FavoritesMap, DbErr> {
+    Ok(select_row(db, user_id).await?.map(|row| favorites_of(&row)).unwrap_or_default())
+}
+
+async fn persist_favorites(
+    db: &DatabaseConnection,
+    user_id: Uuid,
+    favorites: &FavoritesMap,
+) -> Result<(), DbErr> {
+    let now: DateTimeWithTimeZone = chrono::Utc::now().into();
+    let value = serde_json::to_value(favorites).unwrap_or(serde_json::Value::Null);
+    gh::Entity::update_many()
+        .col_expr(gh::Column::FavoriteWorkflows, Expr::value(value))
+        .col_expr(gh::Column::UpdatedAt, Expr::value(now))
+        .filter(gh::Column::UserId.eq(user_id))
+        .exec(db)
+        .await?;
+    Ok(())
+}
+
+/// `PUT /me/github/favorites` (port of `runSetRepoFavorites`): merge one repo's
+/// favorites and return the full map. Errors when no token is connected.
+pub async fn set_repo_favorites(
+    db: &DatabaseConnection,
+    user_id: Uuid,
+    repo_full_name: &str,
+    workflow_ids: &[i64],
+) -> Result<FavoritesMap, DbErr> {
+    let row = select_row(db, user_id)
+        .await?
+        .ok_or_else(|| DbErr::Custom("No GitHub token connected".to_string()))?;
+    let next = set_repo_in_favorites(&favorites_of(&row), repo_full_name, workflow_ids);
+    persist_favorites(db, user_id, &next).await?;
+    Ok(next)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn map(pairs: &[(&str, &[i64])]) -> FavoritesMap {
+        pairs.iter().map(|(k, v)| (k.to_string(), v.to_vec())).collect()
+    }
+
+    #[test]
+    fn favorites_of_null_is_empty() {
+        assert!(favorites_from_value(None).is_empty());
+        assert!(favorites_from_value(Some(&serde_json::Value::Null)).is_empty());
+    }
+
+    #[test]
+    fn favorites_of_returns_stored_map() {
+        let v = serde_json::json!({ "o/a": [1, 2] });
+        assert_eq!(favorites_from_value(Some(&v)), map(&[("o/a", &[1, 2])]));
+    }
+
+    #[test]
+    fn sets_one_repo_without_touching_others() {
+        let next = set_repo_in_favorites(&map(&[("o/a", &[1])]), "o/b", &[3, 4]);
+        assert_eq!(next, map(&[("o/a", &[1]), ("o/b", &[3, 4])]));
+    }
+
+    #[test]
+    fn overwrites_and_dedupes_existing_repo() {
+        let next = set_repo_in_favorites(&map(&[("o/a", &[1, 2])]), "o/a", &[2, 2, 5]);
+        assert_eq!(next, map(&[("o/a", &[2, 5])]));
+    }
+
+    #[test]
+    fn drops_repo_when_list_becomes_empty() {
+        let next = set_repo_in_favorites(&map(&[("o/a", &[1]), ("o/b", &[2])]), "o/a", &[]);
+        assert_eq!(next, map(&[("o/b", &[2])]));
+    }
 }
