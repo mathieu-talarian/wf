@@ -4,6 +4,7 @@
 //! the *active* queue only (fetching nodes for all five ~doubles search cost);
 //! inactive tabs load their PRs on demand via `fetch_queue_pulls`.
 
+pub mod enrich;
 pub mod query;
 pub mod types;
 

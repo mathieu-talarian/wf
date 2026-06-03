@@ -148,3 +148,115 @@ impl GithubDashboard {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// PR enrichment DTOs (port of the detail-derived half of `dashboard/types.ts`).
+// Fetched lazily per PR via the enrichment endpoints (`/me/github/pull`,
+// `/me/github/pulls/enrich`). All serialize camelCase to match the API contract.
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GithubApprovalState {
+    Approved,
+    ChangesRequested,
+    ReviewRequired,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GithubCheckState {
+    Success,
+    Failure,
+    Pending,
+    Skipped,
+    Neutral,
+    Cancelled,
+    TimedOut,
+    ActionRequired,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GithubRequestedReviewerKind {
+    User,
+    Team,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GithubWorkflowRunSummary {
+    pub id: i64,
+    pub name: Option<String>,
+    pub status: String,
+    pub conclusion: Option<String>,
+    pub url: String,
+    pub run_number: i64,
+    pub event: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GithubRequestedReviewer {
+    pub name: String,
+    pub avatar_url: Option<String>,
+    pub url: String,
+    pub kind: GithubRequestedReviewerKind,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GithubRequiredCheck {
+    pub name: String,
+    pub state: GithubCheckState,
+    pub url: Option<String>,
+    pub required: bool,
+}
+
+/// Detail-derived fields, fetched lazily per PR (port of
+/// `GithubPullRequestEnrichmentT`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GithubPullRequestEnrichment {
+    pub repository: GithubDashboardRepository,
+    pub review_comments: Option<i64>,
+    pub additions: Option<i64>,
+    pub deletions: Option<i64>,
+    pub changed_files: Option<i64>,
+    pub draft: Option<bool>,
+    pub head_ref: Option<String>,
+    pub base_ref: Option<String>,
+    pub head_sha: Option<String>,
+    pub latest_run: Option<GithubWorkflowRunSummary>,
+    pub approval_state: GithubApprovalState,
+    pub requested_reviewers: Vec<GithubRequestedReviewer>,
+    pub mergeable: Option<bool>,
+    pub mergeable_state: Option<String>,
+    pub branch_behind: Option<bool>,
+    pub required_checks: Vec<GithubRequiredCheck>,
+    pub readiness_badges: Vec<String>,
+    pub blocker_summary: Vec<String>,
+}
+
+/// One PR to enrich in a batch request (port of `GithubPullRefT`).
+#[derive(Debug, Clone, Deserialize)]
+pub struct GithubPullRef {
+    pub owner: String,
+    pub repo: String,
+    pub number: i64,
+}
+
+/// A batch enrichment entry: the ref echoed back with its enrichment (port of
+/// `GithubPullEnrichmentResultT`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GithubPullEnrichmentResult {
+    pub owner: String,
+    pub repo: String,
+    pub number: i64,
+    pub enrichment: GithubPullRequestEnrichment,
+}

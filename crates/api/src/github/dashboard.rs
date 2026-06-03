@@ -10,8 +10,9 @@ use wf_core::Sealed;
 use wf_db::entities::github_pat_connections as gh;
 use wf_db::repositories::github_pat;
 use wf_github::{
-    fetch_dashboard, fetch_queue_pulls, list_repositories, GithubAccountSummary, GithubDashboard,
-    GithubError, GithubQueueKey, GithubRepoOption,
+    enrich_pull_request, enrich_pull_requests, fetch_dashboard, fetch_queue_pulls,
+    list_repositories, GithubAccountSummary, GithubDashboard, GithubError, GithubPullEnrichmentResult,
+    GithubPullRef, GithubPullRequestEnrichment, GithubQueueKey, GithubRepoOption, RepoRef,
 };
 
 use crate::error::AppError;
@@ -139,6 +140,31 @@ pub async fn get_queue(
         .await?
         .ok_or_else(|| AppError::from(GithubError::Api("No GitHub token connected".into())))?;
     Ok(fetch_queue_pulls(&pat.token, &pat.login, &pat.selected_repos, key).await?)
+}
+
+/// `GET /me/github/pull` (port of `runPullEnrichment`): enrich a single PR.
+pub async fn get_pull_enrichment(
+    state: &AppState,
+    user_id: Uuid,
+    r: RepoRef,
+    number: i64,
+) -> Result<GithubPullRequestEnrichment, AppError> {
+    let pat = super::pat::resolve_pat(state, user_id)
+        .await?
+        .ok_or_else(|| AppError::from(GithubError::Api("No GitHub token connected".into())))?;
+    Ok(enrich_pull_request(&pat.token, &r, number).await)
+}
+
+/// `POST /me/github/pulls/enrich` (port of `runPullEnrichments`): batch-enrich.
+pub async fn get_pull_enrichments(
+    state: &AppState,
+    user_id: Uuid,
+    refs: &[GithubPullRef],
+) -> Result<Vec<GithubPullEnrichmentResult>, AppError> {
+    let pat = super::pat::resolve_pat(state, user_id)
+        .await?
+        .ok_or_else(|| AppError::from(GithubError::Api("No GitHub token connected".into())))?;
+    Ok(enrich_pull_requests(&pat.token, refs).await)
 }
 
 /// `GET /me/github/repos` (port of `runListRepos`).

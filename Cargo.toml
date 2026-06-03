@@ -41,6 +41,10 @@ sea-orm = { version = "2.0.0-rc.40", default-features = false, features = [
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls", "query"] }
 jsonwebtoken = { version = "10", features = ["rust_crypto"] }
 
+# Async combinators (bounded-concurrency enrichment) + URL path encoding
+futures = "0.3"
+percent-encoding = "2"
+
 # Crypto
 aes-gcm = "0.10"
 base64 = "0.22"

@@ -12,21 +12,21 @@ Working checklist for the remaining migration, derived from `2026-06-03-ts-to-ru
 ## Status snapshot
 - ✅ Phase 0 spikes (DB session pooler, AES-GCM on real row, JWKS ES256)
 - ✅ Phase 1 skeleton · ✅ Phase 2 auth + `/me`
-- ✅ Phase 3a GitHub client + PAT validation · ✅ 3b connection flow · ✅ 3c dashboard (data + routes + SWR)
+- ✅ Phase 3a GitHub client + PAT validation · ✅ 3b connection flow · ✅ 3c dashboard (data + routes + SWR) · ✅ 3c.3 PR enrichment
 - ✅ Dependency upgrade (reqwest 0.13, jsonwebtoken 10, sqlx 0.9, sea-orm 2.0-rc, getrandom 0.4)
-- **Endpoints done: 13 / 48** — `/health`, `/hello/:name`, `/me`, `/me/github` (4 conn), `/me/github/{dashboard,queue,repos}` GET + `repos` PUT.
+- **Endpoints done: 15 / 48** — `/health`, `/hello/:name`, `/me`, `/me/github` (4 conn), `/me/github/{dashboard,queue,repos}` GET + `repos` PUT, `/me/github/pull` GET + `/me/github/pulls/enrich` POST.
 
 ---
 
 ## Phase 3 — GitHub (remaining)
 
-### 3c.3 — PR enrichment  ⏳ NEXT
+### 3c.3 — PR enrichment  ✅ DONE
 - **Source:** `github/dashboard/enrich.ts`, `api.ts` (`fetchDetail`/`fetchReviews`/`fetchLatestRun`), `checks.ts`, `readiness.ts`.
-- **Build:** `GithubPullRequestEnrichment` DTO (reviewComments, additions, deletions, changedFiles, draft, headRef/baseRef/headSha, latestRun, approvalState, requestedReviewers, mergeable, mergeableState, branchBehind, requiredChecks, readinessBadges, blockerSummary); REST calls (pull detail, reviews, combined status, check-runs, branch protection); approval-state + readiness-badge + blocker logic.
-- **Endpoints:** `GET /me/github/pull` (owner,repo,number), `POST /me/github/pulls/enrich` ({refs}).
-- **Verify:** example enriching a real PR number from the live `mentioned` queue.
+- **Built:** `GithubPullRequestEnrichment` DTO + enums (`dashboard/types.rs`); `dashboard/enrich.rs` — best-effort REST fetches (pull detail, reviews, latest run, combined status, check-runs, branch protection) with `futures::join!`; check normalize/select, approval-state, readiness-badge + blocker logic; `enrich_pull_request` + `enrich_pull_requests` (bounded concurrency, pool 8, `buffered` preserves order). Path segments percent-encoded (branch may contain `/`).
+- **Endpoints:** `GET /me/github/pull` (owner,repo,number) + `POST /me/github/pulls/enrich` ({refs}) — both `resolve_pat` → "No GitHub token connected" when unconnected.
+- **Verified:** `cargo run -p wf-db --example gh_pr_enrich` enriched live PR `ScriptAddicts/gpt-for-excel-word#2001` (behind/blocked, 12 checks, latestRun). 5 unit tests for normalize/select/approval/badges.
 
-### 3d.1 — Activity reads
+### 3d.1 — Activity reads  ⏳ NEXT
 - **Source:** `github/branches.ts`, `branches-graphql.ts`, `workflows/{workflows,inputs,environments}.ts`, `activity/*`.
 - **Endpoints:** `GET /me/github/{branches,workflows,workflow/inputs,workflow/runs,repo/branches,repo/environments}`.
 - **Note:** workflow inputs YAML → `serde_yaml`. Numeric query params arrive as strings → parse server-side.

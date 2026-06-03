@@ -99,8 +99,7 @@ pub async fn disconnect(state: &AppState, user_id: Uuid) -> Result<(), AppError>
     Ok(())
 }
 
-/// Cache-first PAT resolution for the data/activity paths (added next chunk).
-#[allow(dead_code)]
+/// Cache-first PAT resolution for the data/activity paths.
 pub async fn resolve_pat(
     state: &AppState,
     user_id: Uuid,

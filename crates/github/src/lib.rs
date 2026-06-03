@@ -8,8 +8,13 @@ pub mod errors;
 pub mod types;
 pub mod validate;
 
-pub use client::{GithubClient, RepoRef};
-pub use dashboard::types::{GithubAccountSummary, GithubDashboard, GithubQueueKey, GithubRepoOption};
+pub use client::{parse_repo_ref, GithubClient, RepoRef};
+pub use dashboard::enrich::{enrich_pull_request, enrich_pull_requests};
+pub use dashboard::types::{
+    GithubAccountSummary, GithubApprovalState, GithubCheckState, GithubDashboard,
+    GithubPullEnrichmentResult, GithubPullRef, GithubPullRequestEnrichment, GithubQueueKey,
+    GithubRepoOption, GithubRequestedReviewer, GithubRequiredCheck, GithubWorkflowRunSummary,
+};
 pub use dashboard::{fetch_dashboard, fetch_queue_pulls, list_repositories};
 pub use errors::{GithubError, PatValidationError};
 pub use types::{PatTokenKind, PatValidationResult, PatValidationStatus};

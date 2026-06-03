@@ -4,7 +4,7 @@
 use actix_web::{web, HttpResponse};
 use sea_orm::prelude::Uuid;
 use serde::Deserialize;
-use wf_github::GithubQueueKey;
+use wf_github::{GithubPullRef, GithubQueueKey, RepoRef};
 
 use crate::auth::AuthUser;
 use crate::error::AppError;
@@ -29,6 +29,18 @@ struct QueueQuery {
 #[derive(Deserialize)]
 struct ReposBody {
     repos: Vec<String>,
+}
+
+#[derive(Deserialize)]
+struct PullQuery {
+    owner: String,
+    repo: String,
+    number: String,
+}
+
+#[derive(Deserialize)]
+struct PullsBody {
+    refs: Vec<GithubPullRef>,
 }
 
 fn user_id(user: &AuthUser) -> Result<Uuid, AppError> {
@@ -106,6 +118,31 @@ async fn set_repos_route(
     Ok(HttpResponse::Ok().json(s))
 }
 
+/// GET /me/github/pull?owner&repo&number — enrich a single PR.
+async fn pull_route(
+    state: web::Data<AppState>,
+    user: AuthUser,
+    q: web::Query<PullQuery>,
+) -> Result<HttpResponse, AppError> {
+    let number: i64 = q
+        .number
+        .parse()
+        .map_err(|_| AppError::validation(format!("invalid pull number: {}", q.number)))?;
+    let r = RepoRef { owner: q.owner.clone(), repo: q.repo.clone() };
+    let e = dashboard::get_pull_enrichment(&state, user_id(&user)?, r, number).await?;
+    Ok(HttpResponse::Ok().json(e))
+}
+
+/// POST /me/github/pulls/enrich — batch-enrich the supplied PR refs.
+async fn pulls_route(
+    state: web::Data<AppState>,
+    user: AuthUser,
+    body: web::Json<PullsBody>,
+) -> Result<HttpResponse, AppError> {
+    let r = dashboard::get_pull_enrichments(&state, user_id(&user)?, &body.refs).await?;
+    Ok(HttpResponse::Ok().json(r))
+}
+
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.route("/me/github", web::get().to(status))
         .route("/me/github/token", web::post().to(connect))
@@ -114,5 +151,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .route("/me/github/dashboard", web::get().to(dashboard_route))
         .route("/me/github/queue", web::get().to(queue_route))
         .route("/me/github/repos", web::get().to(repos_route))
-        .route("/me/github/repos", web::put().to(set_repos_route));
+        .route("/me/github/repos", web::put().to(set_repos_route))
+        .route("/me/github/pull", web::get().to(pull_route))
+        .route("/me/github/pulls/enrich", web::post().to(pulls_route));
 }
