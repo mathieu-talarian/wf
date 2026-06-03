@@ -1,0 +1,35 @@
+# Workflow backend — Rust rewrite
+
+Rust port of the TypeScript backend. Faithful port; TS source-of-truth (read-only):
+`../workflow/apps/server`. Spec: `2026-06-03-ts-to-rust-backend.md`.
+
+## Build & verify
+- Lint gate (CI): `cargo clippy --all --all-targets --locked -- -D warnings` — run this, not plain clippy.
+- Tests: `cargo test --workspace`. Build: `cargo build --workspace`.
+- `#[cfg(test)] mod tests` must be the LAST item in a file (clippy `items-after-test-module`).
+- Workspace crates: `wf-core`, `wf-db`, `wf-github`, `wf-jira`, `wf-api` (the `wf-` prefix avoids the std `core` clash).
+
+## Architecture
+- `wf-core` — config, AES-256-GCM `TokenCipher`, RFC 9457 problem, auth types (no actix/db deps).
+- `wf-db` — SeaORM entities + repositories; `connect()` (statement-cache disabled).
+- `wf-github` / `wf-jira` — `reqwest` clients + domain logic for each integration.
+- `wf-api` — actix-web bin: `AppState` (DI), `AuthUser` extractor (Supabase JWKS), routes, middleware. Entry: `crates/api/src/main.rs`.
+
+## Database (Supabase)
+- `DATABASE_URL` must be the **session pooler** (`...pooler.supabase.com:5432`).
+  The transaction pooler (6543) breaks SeaORM/sqlx with `42P05` even with `statement_cache_capacity(0)`; the direct host (`db.<ref>.supabase.co`) is IPv6-only.
+- Raw SQL in sea-orm 2.0: `db.query_one_raw(stmt)` / `query_all_raw` (the generic `query_one` is for query-builders).
+
+## Env & running
+- `.env` is auto-loaded via dotenvy: `cargo run -p wf-api` works without sourcing. `.env` is gitignored.
+- Live smoke harnesses (need `.env` + real data): `cargo run -p wf-db --example {phase0,gh_validate,gh_repo,gh_dashboard,gh_repo_write}`.
+
+## Dependency feature gotchas
+- `jsonwebtoken` → `features=["rust_crypto"]` (else runtime "CryptoProvider" panic).
+- `reqwest` → `query` feature for `RequestBuilder::query`; TLS feature is `rustls`.
+- `sqlx` → `runtime-tokio` + `tls-rustls-ring`. `getrandom` → `fill()` (not `getrandom()`).
+
+## Conventions
+- Response DTOs: `#[serde(rename_all = "camelCase")]`; timestamps ISO8601 millis+Z (`to_rfc3339_opts(SecondsFormat::Millis, true)`).
+- Errors: return `AppError` → RFC 9457 `application/problem+json` (carries `instance`/`reason`).
+- Tooling: prefer Serena MCP for code edits/reads; context7 for library docs.
