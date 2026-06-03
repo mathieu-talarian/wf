@@ -48,9 +48,10 @@ Working checklist for the remaining migration, derived from `2026-06-03-ts-to-ru
 
 ## Phase 4 — Jira (`wf-jira` + `wf-api/jira`)
 
-### 4a — Jira client + validation
-- **Source:** `jira/client.ts`, `errors.ts`, `site-url.ts`, `validate.ts`.
-- **Build:** `reqwest` Basic-auth client bound to one `site_url`; **no-follow redirect policy → any 3xx = 502** (credential-replay defense); `JiraApiError { status, message, error_messages }`; site-URL normalization (port `site-url.test.ts`).
+### 4a — Jira client + validation  ✅ DONE
+- **Source:** `jira/client.ts`, `errors.ts`, `site-url.ts`, `validate.ts`, `issues/status.ts`.
+- **Built:** `wf-jira` crate — `errors.rs` (JiraApiError/JiraWriteError/JiraNotConnected), `site_url.rs` (`normalize_site_url`/`is_same_jira_origin` via `url` crate; 14 ported tests), `status.rs` (JiraValidationStatus + `validation_status_for_http`), `client.rs` (reqwest Basic-auth, `redirect::Policy::none()` → 3xx = 502 redirect error; non-2xx → JiraApiError w/ errorMessages[0]), `validate.rs` (`validate_credentials` → `/rest/api/3/myself`). 15 unit tests.
+- **Verified:** `cargo run -p wf-jira --example jira_validate` (offline normalization demo; env-gated live validate). Real-credential network check deferred to 4b (stored connection).
 
 ### 4b — Jira connection
 - **Source:** `jira/pat/*`, `routes/pat.ts`. **DB:** `jira_pat_connections` entity (§6.3) + repo + summary.

@@ -48,6 +48,9 @@ percent-encoding = "2"
 # Workflow-dispatch input YAML parsing
 serde_yaml = "0.9"
 
+# URL parsing (Jira site-URL normalization)
+url = "2"
+
 # Crypto
 aes-gcm = "0.10"
 base64 = "0.22"
