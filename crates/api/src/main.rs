@@ -5,6 +5,7 @@
 mod auth;
 mod error;
 mod github;
+mod jira;
 mod middleware;
 mod routes;
 mod state;

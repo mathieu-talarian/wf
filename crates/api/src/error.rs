@@ -13,6 +13,7 @@ use wf_core::auth::AuthError;
 use wf_core::problem::ProblemDetails;
 use wf_github::errors::{GithubError, PatValidationError};
 use wf_github::PatValidationStatus;
+use wf_jira::{JiraApiError, JiraNotConnected, JiraValidationError, JiraValidationStatus, JiraWriteError};
 
 #[derive(Debug, thiserror::Error)]
 enum ErrorKind {
@@ -28,8 +29,29 @@ enum ErrorKind {
     GithubValidation(PatValidationError),
     #[error(transparent)]
     Github(GithubError),
+    #[error(transparent)]
+    JiraValidation(JiraValidationError),
+    #[error(transparent)]
+    JiraApi(JiraApiError),
+    #[error(transparent)]
+    JiraWrite(JiraWriteError),
+    #[error(transparent)]
+    JiraNotConnected(JiraNotConnected),
     #[error("internal error: {0}")]
     Internal(anyhow::Error),
+}
+
+/// Port of the Jira `validationStatus`: HTTP status if known, else by reason
+/// (invalid → 401, missing_permissions → 403, else 502).
+fn jira_validation_http_status(e: &JiraValidationError) -> u16 {
+    if let Some(s) = e.http_status {
+        return s;
+    }
+    match e.status {
+        JiraValidationStatus::Invalid => 401,
+        JiraValidationStatus::MissingPermissions => 403,
+        _ => 502,
+    }
 }
 
 /// The pieces of an RFC 9457 body for a given error kind:
@@ -114,6 +136,34 @@ impl ErrorKind {
                 detail: message.clone(),
                 reason: None,
             },
+            ErrorKind::JiraValidation(e) => Parts {
+                status: jira_validation_http_status(e),
+                slug: "jira-token-rejected",
+                title: "Jira credentials rejected",
+                detail: e.message.clone(),
+                reason: Some(e.status.as_str().to_string()),
+            },
+            ErrorKind::JiraNotConnected(_) => Parts {
+                status: 404,
+                slug: "jira-not-connected",
+                title: "Jira not connected",
+                detail: "No Jira connection exists for this user.".to_string(),
+                reason: None,
+            },
+            ErrorKind::JiraWrite(e) => Parts {
+                status: if (400..600).contains(&e.status) { e.status } else { 502 },
+                slug: "jira-write-failed",
+                title: "Jira action failed",
+                detail: e.message.clone(),
+                reason: None,
+            },
+            ErrorKind::JiraApi(_) => Parts {
+                status: 502,
+                slug: "jira-request-failed",
+                title: "Jira request failed",
+                detail: "The upstream Jira request did not succeed.".to_string(),
+                reason: None,
+            },
         }
     }
 }
@@ -190,6 +240,30 @@ impl From<PatValidationError> for AppError {
 impl From<GithubError> for AppError {
     fn from(e: GithubError) -> Self {
         Self::of(ErrorKind::Github(e))
+    }
+}
+
+impl From<JiraValidationError> for AppError {
+    fn from(e: JiraValidationError) -> Self {
+        Self::of(ErrorKind::JiraValidation(e))
+    }
+}
+
+impl From<JiraApiError> for AppError {
+    fn from(e: JiraApiError) -> Self {
+        Self::of(ErrorKind::JiraApi(e))
+    }
+}
+
+impl From<JiraWriteError> for AppError {
+    fn from(e: JiraWriteError) -> Self {
+        Self::of(ErrorKind::JiraWrite(e))
+    }
+}
+
+impl From<JiraNotConnected> for AppError {
+    fn from(e: JiraNotConnected) -> Self {
+        Self::of(ErrorKind::JiraNotConnected(e))
     }
 }
 

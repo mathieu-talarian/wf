@@ -4429,6 +4429,7 @@ dependencies = [
  "wf-core",
  "wf-db",
  "wf-github",
+ "wf-jira",
 ]
 
 [[package]]

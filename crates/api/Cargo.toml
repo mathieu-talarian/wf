@@ -12,6 +12,7 @@ path = "src/main.rs"
 wf-core = { workspace = true }
 wf-db = { workspace = true }
 wf-github = { workspace = true }
+wf-jira = { workspace = true }
 
 actix-web = { workspace = true }
 actix-cors = { workspace = true }

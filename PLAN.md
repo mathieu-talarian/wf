@@ -53,10 +53,12 @@ Working checklist for the remaining migration, derived from `2026-06-03-ts-to-ru
 - **Built:** `wf-jira` crate — `errors.rs` (JiraApiError/JiraWriteError/JiraNotConnected), `site_url.rs` (`normalize_site_url`/`is_same_jira_origin` via `url` crate; 14 ported tests), `status.rs` (JiraValidationStatus + `validation_status_for_http`), `client.rs` (reqwest Basic-auth, `redirect::Policy::none()` → 3xx = 502 redirect error; non-2xx → JiraApiError w/ errorMessages[0]), `validate.rs` (`validate_credentials` → `/rest/api/3/myself`). 15 unit tests.
 - **Verified:** `cargo run -p wf-jira --example jira_validate` (offline normalization demo; env-gated live validate). Real-credential network check deferred to 4b (stored connection).
 
-### 4b — Jira connection
-- **Source:** `jira/pat/*`, `routes/pat.ts`. **DB:** `jira_pat_connections` entity (§6.3) + repo + summary.
-- **Endpoints:** `GET /me/jira`, `POST /me/jira/token` ({siteUrl,email,token}), `POST /me/jira/token/validate`, `DELETE /me/jira`, `PUT /me/jira/projects`.
+### 4b — Jira connection  ✅ DONE
+- **Source:** `jira/pat/{account,runners}.ts`, `routes/{pat,helpers}.ts`.
+- **Built:** `wf-db` `jira_pat_connections` entity (§6.3) + `repositories/jira_pat.rs` (select/upsert/mark_validation/set_selected_projects/touch_last_used/disconnect; re-connect preserves selectedProjects/createdAt/lastUsedAt). `wf-api/jira/{summary,pat,routes,mod}.rs` — connect/validate/disconnect/set_projects (decrypt-per-request, no cache per §19.5). `AppError` extended: `jira-token-rejected` (httpStatus ?? invalid→401/missing_permissions→403/else 502, reason), `jira-not-connected` (404), `jira-write-failed` (passthrough), `jira-request-failed` (502). Routes registered in `routes/mod.rs`.
+- **Endpoints:** `GET /me/jira`, `POST /me/jira/token`, `POST /me/jira/token/validate`, `DELETE /me/jira`, `PUT /me/jira/projects`.
 - **Note:** Jira reuses the GitHub `TokenCipher` key.
+- **Verified:** `cargo run -p wf-db --example jira_row` — entity select against live Supabase succeeds (schema match). Full connect flow needs real creds (deferred; same as 4a).
 
 ### 4c — Jira data + mappers
 - **Source:** `jira/issues/{adf,jql,fields,mappers,status,dashboard,issues}.ts`, `routes/data.ts`.
