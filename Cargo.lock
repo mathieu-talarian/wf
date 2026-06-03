@@ -3392,11 +3392,20 @@ dependencies = [
  "tokio",
  "tracing",
  "wf-core",
+ "wf-github",
 ]
 
 [[package]]
 name = "wf-github"
 version = "0.1.0"
+dependencies = [
+ "chrono",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tracing",
+]
 
 [[package]]
 name = "wf-jira"
