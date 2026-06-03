@@ -240,8 +240,12 @@ YgnYGs3OkCZ5pruhb0+vxfPGqWkkJDuU+SpMGVTfV7fx1SlDThpEAI7Q\n\
     #[test]
     fn rejects_tampered_signature() {
         let mut token = sign(valid_claims());
-        token.pop();
-        token.push(if token.ends_with('A') { 'B' } else { 'A' });
+        // Flip the first char of the signature segment (the last base64url char
+        // can carry unused bits and decode identically — not a reliable tamper).
+        let sig_start = token.rfind('.').unwrap() + 1;
+        let first = token.as_bytes()[sig_start] as char;
+        let repl = if first == 'A' { 'B' } else { 'A' };
+        token.replace_range(sig_start..sig_start + 1, &repl.to_string());
         assert!(verify_with_jwk(&jwk(), Algorithm::ES256, &token, ISSUER, AUDIENCE).is_err());
     }
 }

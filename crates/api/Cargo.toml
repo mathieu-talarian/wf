@@ -11,6 +11,7 @@ path = "src/main.rs"
 [dependencies]
 wf-core = { workspace = true }
 wf-db = { workspace = true }
+wf-github = { workspace = true }
 
 actix-web = { workspace = true }
 actix-cors = { workspace = true }

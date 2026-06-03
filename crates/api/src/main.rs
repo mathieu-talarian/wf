@@ -4,6 +4,7 @@
 
 mod auth;
 mod error;
+mod github;
 mod middleware;
 mod routes;
 mod state;
@@ -75,6 +76,7 @@ async fn main() -> std::io::Result<()> {
         db,
         jwks,
         cipher,
+        token_cache: Arc::new(crate::github::token_cache::TokenCache::default()),
     });
 
     HttpServer::new(move || {

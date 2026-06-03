@@ -3365,6 +3365,7 @@ dependencies = [
  "tracing-subscriber",
  "wf-core",
  "wf-db",
+ "wf-github",
 ]
 
 [[package]]

@@ -8,4 +8,5 @@ pub mod me;
 pub fn configure(cfg: &mut web::ServiceConfig) {
     health::configure(cfg);
     me::configure(cfg);
+    crate::github::routes::configure(cfg);
 }
