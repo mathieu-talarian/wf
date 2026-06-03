@@ -29,7 +29,7 @@ async fn main() -> Result<()> {
         .await
         .context("connect failed")?;
     let row = db
-        .query_one(Statement::from_string(
+        .query_one_raw(Statement::from_string(
             DbBackend::Postgres,
             "SELECT 1 AS one",
         ))
@@ -41,7 +41,7 @@ async fn main() -> Result<()> {
     println!("== Spike 1b: repeated parameterized query (no 42P05) ==");
     for i in 0..5 {
         let r = db
-            .query_one(Statement::from_sql_and_values(
+            .query_one_raw(Statement::from_sql_and_values(
                 DbBackend::Postgres,
                 "SELECT $1::int AS v",
                 [i.into()],
@@ -56,7 +56,7 @@ async fn main() -> Result<()> {
 
     println!("== Spike 2: decrypt a real github_pat_connections row ==");
     let count_row = db
-        .query_one(Statement::from_string(
+        .query_one_raw(Statement::from_string(
             DbBackend::Postgres,
             "SELECT count(*)::bigint AS n FROM github_pat_connections",
         ))
@@ -71,7 +71,7 @@ async fn main() -> Result<()> {
     }
 
     let pat = db
-        .query_one(Statement::from_string(
+        .query_one_raw(Statement::from_string(
             DbBackend::Postgres,
             "SELECT github_login, last_four, \
              access_token_ciphertext, access_token_iv, access_token_auth_tag \

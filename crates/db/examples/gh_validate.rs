@@ -18,7 +18,7 @@ async fn main() -> Result<()> {
 
     let db = connect(&database_url, ConnectOptions::default()).await?;
     let row = db
-        .query_one(Statement::from_string(
+        .query_one_raw(Statement::from_string(
             DbBackend::Postgres,
             "SELECT github_login, access_token_ciphertext, access_token_iv, access_token_auth_tag \
              FROM github_pat_connections LIMIT 1",
