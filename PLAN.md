@@ -81,7 +81,9 @@ Working checklist for the remaining migration, derived from `2026-06-03-ts-to-ru
 - **5b web:** generate typed client from the spec into `apps/web/src/lib/api.gen.ts`; rewrite `apps/web/src/lib/api.ts` (keep `buildAuthHeaders`, `ApiError` shape); remove `@elysiajs/eden`, `treaty<AppT>`, and all `server`/`server/*` type imports; CI spec-drift check; generated client must typecheck.
 
 ## Phase 6 — Parity verification
-- Scripted diff of TS vs Rust JSON responses for each §14 endpoint (same JWT, same DB). Load-check the dashboard path. Resolve the deferred parity TODOs (below).
+- ✅ Harness built: `scripts/parity.py` — diffs TS vs Rust JSON per §14 endpoint (same JWT + DB), normalizing volatile fields (timestamps, health clock). Self-tested 14/14 (both bases → Rust). **To run for real:** start the TS server + Rust server, export `JWT`/`TS_BASE`/`RUST_BASE`, `python3 scripts/parity.py` (add `--include-writes` against a throwaway account). Needs a running TS server + a real Supabase JWT (user-provided).
+- ✅ Deferred parity TODOs resolved (below).
+- TODO: load-check the dashboard path.
 
 ## Phase 7 — Cutover
 - Decide deploy target (§19.3). Point traffic at the Rust binary; keep TS warm for rollback (schema + token format unchanged → repoint to roll back). Soak, then decommission TS.
