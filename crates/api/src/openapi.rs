@@ -212,4 +212,30 @@ mod tests {
         assert!(json.contains("GithubDashboard"));
         assert!(json.contains("JiraIssueDetail"));
     }
+
+    /// CI spec-drift check (Phase 5): the generated spec must match the
+    /// committed `openapi.json` (the artifact the web client is generated from).
+    /// Refresh with `UPDATE_OPENAPI=1 cargo test -p wf-api openapi_spec_committed`.
+    #[test]
+    fn openapi_spec_committed() {
+        let generated = serde_json::to_value(ApiDoc::openapi()).expect("to value");
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/openapi.json");
+
+        if std::env::var("UPDATE_OPENAPI").is_ok() {
+            let pretty = serde_json::to_string_pretty(&generated).expect("pretty");
+            std::fs::write(path, pretty + "\n").expect("write openapi.json");
+            return;
+        }
+
+        let committed: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(path)
+                .expect("openapi.json missing — run UPDATE_OPENAPI=1 cargo test"),
+        )
+        .expect("parse committed openapi.json");
+
+        assert_eq!(
+            generated, committed,
+            "OpenAPI spec drifted from openapi.json — run `UPDATE_OPENAPI=1 cargo test -p wf-api openapi_spec_committed` to refresh"
+        );
+    }
 }

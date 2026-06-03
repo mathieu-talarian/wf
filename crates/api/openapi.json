@@ -1,0 +1,3756 @@
+{
+  "components": {
+    "schemas": {
+      "AssignBody": {
+        "properties": {
+          "accountId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "key": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "key"
+        ],
+        "type": "object"
+      },
+      "ClosePullBody": {
+        "properties": {
+          "number": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "repo": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "owner",
+          "repo",
+          "number"
+        ],
+        "type": "object"
+      },
+      "CommentBody": {
+        "properties": {
+          "body": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "body"
+        ],
+        "type": "object"
+      },
+      "ConnectBody": {
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "siteUrl": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "siteUrl",
+          "email",
+          "token"
+        ],
+        "type": "object"
+      },
+      "CreatePullBody": {
+        "properties": {
+          "base": {
+            "type": "string"
+          },
+          "body": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "head": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "repo": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "owner",
+          "repo",
+          "base",
+          "head",
+          "title"
+        ],
+        "type": "object"
+      },
+      "DashboardData": {
+        "description": "`fetchDashboard` result: counts for every queue + nodes for the active one.",
+        "properties": {
+          "queuePulls": {
+            "items": {
+              "$ref": "#/components/schemas/GithubPullRequestQueue"
+            },
+            "type": "array"
+          },
+          "queues": {
+            "items": {
+              "$ref": "#/components/schemas/GithubQueueCount"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "queues",
+          "queuePulls"
+        ],
+        "type": "object"
+      },
+      "DisconnectedResponse": {
+        "properties": {
+          "disconnected": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "disconnected"
+        ],
+        "type": "object"
+      },
+      "DispatchBody": {
+        "properties": {
+          "inputs": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "ref": {
+            "type": "string"
+          },
+          "repo": {
+            "type": "string"
+          },
+          "workflowId": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "owner",
+          "repo",
+          "workflowId",
+          "ref",
+          "inputs"
+        ],
+        "type": "object"
+      },
+      "EditBody": {
+        "properties": {
+          "fields": {
+            "additionalProperties": {},
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "key": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "fields"
+        ],
+        "type": "object"
+      },
+      "GithubAccountSummary": {
+        "description": "Account header on the dashboard response (port of `GithubAccountSummaryT`).",
+        "properties": {
+          "connected": {
+            "type": "boolean"
+          },
+          "connectedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "login": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "scope": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "connected"
+        ],
+        "type": "object"
+      },
+      "GithubApprovalState": {
+        "enum": [
+          "approved",
+          "changes_requested",
+          "review_required",
+          "unknown"
+        ],
+        "type": "string"
+      },
+      "GithubBranchPrompt": {
+        "properties": {
+          "compareUrl": {
+            "type": "string"
+          },
+          "lastCommitDate": {
+            "type": "string"
+          },
+          "lastCommitMessage": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "lastCommitDate",
+          "lastCommitMessage",
+          "compareUrl"
+        ],
+        "type": "object"
+      },
+      "GithubCheckState": {
+        "enum": [
+          "success",
+          "failure",
+          "pending",
+          "skipped",
+          "neutral",
+          "cancelled",
+          "timed_out",
+          "action_required",
+          "unknown"
+        ],
+        "type": "string"
+      },
+      "GithubConnectionSummary": {
+        "properties": {
+          "connected": {
+            "type": "boolean"
+          },
+          "connectedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "expiresAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lastFour": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lastUsedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lastValidatedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "login": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "selectedRepos": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "tokenKind": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "validationError": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "validationStatus": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "connected",
+          "selectedRepos"
+        ],
+        "type": "object"
+      },
+      "GithubCreatePullInput": {
+        "description": "Body for creating a PR (port of `GithubCreatePullInputT`).",
+        "properties": {
+          "base": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "head": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "base",
+          "head",
+          "title",
+          "body"
+        ],
+        "type": "object"
+      },
+      "GithubCreatePullResult": {
+        "properties": {
+          "number": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "number",
+          "url"
+        ],
+        "type": "object"
+      },
+      "GithubDashboard": {
+        "description": "The full dashboard response (port of `GithubDashboardT`). Persisted as the\n`dashboard_snapshot` jsonb for cold-start SWR.",
+        "properties": {
+          "account": {
+            "$ref": "#/components/schemas/GithubAccountSummary"
+          },
+          "queuePulls": {
+            "items": {
+              "$ref": "#/components/schemas/GithubPullRequestQueue"
+            },
+            "type": "array"
+          },
+          "queues": {
+            "items": {
+              "$ref": "#/components/schemas/GithubQueueCount"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "account",
+          "queues",
+          "queuePulls"
+        ],
+        "type": "object"
+      },
+      "GithubDashboardActor": {
+        "properties": {
+          "avatar_url": {
+            "type": "string"
+          },
+          "login": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "login",
+          "avatar_url",
+          "url"
+        ],
+        "type": "object"
+      },
+      "GithubDashboardLabel": {
+        "properties": {
+          "color": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "color"
+        ],
+        "type": "object"
+      },
+      "GithubDashboardRepository": {
+        "properties": {
+          "actionsUrl": {
+            "type": "string"
+          },
+          "defaultBranch": {
+            "type": "string"
+          },
+          "fullName": {
+            "type": "string"
+          },
+          "isArchived": {
+            "type": "boolean"
+          },
+          "isPrivate": {
+            "type": "boolean"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "fullName",
+          "url",
+          "actionsUrl",
+          "isPrivate",
+          "isArchived",
+          "defaultBranch"
+        ],
+        "type": "object"
+      },
+      "GithubMergeMethod": {
+        "enum": [
+          "merge",
+          "squash",
+          "rebase"
+        ],
+        "type": "string"
+      },
+      "GithubMergePullResult": {
+        "properties": {
+          "merged": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "merged",
+          "message"
+        ],
+        "type": "object"
+      },
+      "GithubPullEnrichmentResult": {
+        "description": "A batch enrichment entry: the ref echoed back with its enrichment (port of\n`GithubPullEnrichmentResultT`).",
+        "properties": {
+          "enrichment": {
+            "$ref": "#/components/schemas/GithubPullRequestEnrichment"
+          },
+          "number": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "repo": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "owner",
+          "repo",
+          "number",
+          "enrichment"
+        ],
+        "type": "object"
+      },
+      "GithubPullRef": {
+        "description": "One PR to enrich in a batch request (port of `GithubPullRefT`).",
+        "properties": {
+          "number": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "repo": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "owner",
+          "repo",
+          "number"
+        ],
+        "type": "object"
+      },
+      "GithubPullRequestBasic": {
+        "properties": {
+          "assignees": {
+            "items": {
+              "$ref": "#/components/schemas/GithubDashboardActor"
+            },
+            "type": "array"
+          },
+          "author": {
+            "$ref": "#/components/schemas/GithubDashboardActor"
+          },
+          "comments": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "labels": {
+            "items": {
+              "$ref": "#/components/schemas/GithubDashboardLabel"
+            },
+            "type": "array"
+          },
+          "number": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "repository": {
+            "$ref": "#/components/schemas/GithubDashboardRepository"
+          },
+          "title": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "repository",
+          "number",
+          "title",
+          "url",
+          "author",
+          "assignees",
+          "labels",
+          "comments",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "GithubPullRequestEnrichment": {
+        "description": "Detail-derived fields, fetched lazily per PR (port of\n`GithubPullRequestEnrichmentT`).",
+        "properties": {
+          "additions": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "approvalState": {
+            "$ref": "#/components/schemas/GithubApprovalState"
+          },
+          "baseRef": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "blockerSummary": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "branchBehind": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "changedFiles": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "deletions": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "draft": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "headRef": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "headSha": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "latestRun": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/GithubWorkflowRunSummary"
+              }
+            ]
+          },
+          "mergeable": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "mergeableState": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "readinessBadges": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "repository": {
+            "$ref": "#/components/schemas/GithubDashboardRepository"
+          },
+          "requestedReviewers": {
+            "items": {
+              "$ref": "#/components/schemas/GithubRequestedReviewer"
+            },
+            "type": "array"
+          },
+          "requiredChecks": {
+            "items": {
+              "$ref": "#/components/schemas/GithubRequiredCheck"
+            },
+            "type": "array"
+          },
+          "reviewComments": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "repository",
+          "approvalState",
+          "requestedReviewers",
+          "requiredChecks",
+          "readinessBadges",
+          "blockerSummary"
+        ],
+        "type": "object"
+      },
+      "GithubPullRequestQueue": {
+        "properties": {
+          "incompleteResults": {
+            "type": "boolean"
+          },
+          "key": {
+            "$ref": "#/components/schemas/GithubQueueKey"
+          },
+          "label": {
+            "type": "string"
+          },
+          "pullRequests": {
+            "items": {
+              "$ref": "#/components/schemas/GithubPullRequestBasic"
+            },
+            "type": "array"
+          },
+          "totalCount": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "totalCount",
+          "incompleteResults",
+          "pullRequests"
+        ],
+        "type": "object"
+      },
+      "GithubQueueCount": {
+        "properties": {
+          "incompleteResults": {
+            "type": "boolean"
+          },
+          "key": {
+            "$ref": "#/components/schemas/GithubQueueKey"
+          },
+          "label": {
+            "type": "string"
+          },
+          "totalCount": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "totalCount",
+          "incompleteResults"
+        ],
+        "type": "object"
+      },
+      "GithubQueueKey": {
+        "enum": [
+          "assigned",
+          "review_requested",
+          "authored",
+          "mentioned",
+          "failing_ci"
+        ],
+        "type": "string"
+      },
+      "GithubRepoBranches": {
+        "properties": {
+          "branches": {
+            "items": {
+              "$ref": "#/components/schemas/GithubBranchPrompt"
+            },
+            "type": "array"
+          },
+          "defaultBranch": {
+            "type": "string"
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "repoFullName": {
+            "type": "string"
+          },
+          "repoUrl": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "repoFullName",
+          "repoUrl",
+          "defaultBranch",
+          "branches"
+        ],
+        "type": "object"
+      },
+      "GithubRepoOption": {
+        "description": "One selectable repository (port of `GithubRepoOptionT`).",
+        "properties": {
+          "fullName": {
+            "type": "string"
+          },
+          "isArchived": {
+            "type": "boolean"
+          },
+          "isPrivate": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "fullName",
+          "isPrivate",
+          "isArchived"
+        ],
+        "type": "object"
+      },
+      "GithubRepoWorkflows": {
+        "properties": {
+          "defaultBranch": {
+            "type": "string"
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "repoFullName": {
+            "type": "string"
+          },
+          "repoUrl": {
+            "type": "string"
+          },
+          "workflows": {
+            "items": {
+              "$ref": "#/components/schemas/GithubWorkflowSummary"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "repoFullName",
+          "repoUrl",
+          "defaultBranch",
+          "workflows"
+        ],
+        "type": "object"
+      },
+      "GithubRequestedReviewer": {
+        "properties": {
+          "avatarUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "$ref": "#/components/schemas/GithubRequestedReviewerKind"
+          },
+          "name": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "url",
+          "kind"
+        ],
+        "type": "object"
+      },
+      "GithubRequestedReviewerKind": {
+        "enum": [
+          "user",
+          "team"
+        ],
+        "type": "string"
+      },
+      "GithubRequiredCheck": {
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "state": {
+            "$ref": "#/components/schemas/GithubCheckState"
+          },
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "state",
+          "required"
+        ],
+        "type": "object"
+      },
+      "GithubWorkflowInput": {
+        "properties": {
+          "default": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "options": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "type": {
+            "$ref": "#/components/schemas/GithubWorkflowInputType"
+          }
+        },
+        "required": [
+          "name",
+          "required",
+          "type",
+          "options"
+        ],
+        "type": "object"
+      },
+      "GithubWorkflowInputType": {
+        "enum": [
+          "string",
+          "boolean",
+          "choice",
+          "number",
+          "environment"
+        ],
+        "type": "string"
+      },
+      "GithubWorkflowInputs": {
+        "properties": {
+          "dispatchable": {
+            "type": "boolean"
+          },
+          "inputs": {
+            "items": {
+              "$ref": "#/components/schemas/GithubWorkflowInput"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "dispatchable",
+          "inputs"
+        ],
+        "type": "object"
+      },
+      "GithubWorkflowRunSummary": {
+        "properties": {
+          "conclusion": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "event": {
+            "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "runNumber": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "url",
+          "runNumber",
+          "event",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "GithubWorkflowSummary": {
+        "properties": {
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "path",
+          "state",
+          "url"
+        ],
+        "type": "object"
+      },
+      "HealthResponse": {
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "time"
+        ],
+        "type": "object"
+      },
+      "HelloResponse": {
+        "properties": {
+          "greeting": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "greeting"
+        ],
+        "type": "object"
+      },
+      "JiraAccountSummary": {
+        "properties": {
+          "accountId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "connected": {
+            "type": "boolean"
+          },
+          "displayName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "siteUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "connected"
+        ],
+        "type": "object"
+      },
+      "JiraAllowedRef": {
+        "properties": {
+          "id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "value": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "JiraBoard": {
+        "properties": {
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "type"
+        ],
+        "type": "object"
+      },
+      "JiraComment": {
+        "properties": {
+          "author": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/JiraUser"
+              }
+            ]
+          },
+          "body": {
+            "type": "string"
+          },
+          "created": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "body",
+          "created"
+        ],
+        "type": "object"
+      },
+      "JiraConnectionSummary": {
+        "properties": {
+          "accountId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "connected": {
+            "type": "boolean"
+          },
+          "connectedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "displayName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lastFour": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lastUsedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lastValidatedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "selectedProjects": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "siteUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "validationError": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "validationStatus": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "connected",
+          "selectedProjects"
+        ],
+        "type": "object"
+      },
+      "JiraCreateIssueInput": {
+        "properties": {
+          "fields": {
+            "additionalProperties": {},
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "issueTypeId": {
+            "type": "string"
+          },
+          "projectKey": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "projectKey",
+          "issueTypeId",
+          "fields"
+        ],
+        "type": "object"
+      },
+      "JiraCreateIssueResult": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "key"
+        ],
+        "type": "object"
+      },
+      "JiraCreateMeta": {
+        "properties": {
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/JiraFieldDescriptor"
+            },
+            "type": "array"
+          },
+          "issueTypeId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "issueTypeId",
+          "fields"
+        ],
+        "type": "object"
+      },
+      "JiraDashboard": {
+        "properties": {
+          "account": {
+            "$ref": "#/components/schemas/JiraAccountSummary"
+          },
+          "queues": {
+            "items": {
+              "$ref": "#/components/schemas/JiraQueueResult"
+            },
+            "type": "array"
+          },
+          "selectedProjects": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "account",
+          "queues",
+          "selectedProjects"
+        ],
+        "type": "object"
+      },
+      "JiraDescriptorSchema": {
+        "properties": {
+          "custom": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "items": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "system": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "type": "object"
+      },
+      "JiraEditMeta": {
+        "properties": {
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/JiraFieldDescriptor"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "fields"
+        ],
+        "type": "object"
+      },
+      "JiraFieldDescriptor": {
+        "properties": {
+          "allowedValues": {
+            "items": {
+              "$ref": "#/components/schemas/JiraAllowedRef"
+            },
+            "type": "array"
+          },
+          "fieldId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "schema": {
+            "$ref": "#/components/schemas/JiraDescriptorSchema"
+          }
+        },
+        "required": [
+          "fieldId",
+          "name",
+          "required",
+          "schema",
+          "allowedValues"
+        ],
+        "type": "object"
+      },
+      "JiraIssueDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/JiraIssueSummary"
+          },
+          {
+            "properties": {
+              "comments": {
+                "items": {
+                  "$ref": "#/components/schemas/JiraComment"
+                },
+                "type": "array"
+              },
+              "description": {
+                "type": "string"
+              },
+              "labels": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "reporter": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/JiraUser"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "description",
+              "labels",
+              "comments"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "JiraIssuePage": {
+        "properties": {
+          "isLast": {
+            "type": "boolean"
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/JiraIssueSummary"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "issues",
+          "isLast"
+        ],
+        "type": "object"
+      },
+      "JiraIssueSummary": {
+        "properties": {
+          "assignee": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/JiraUser"
+              }
+            ]
+          },
+          "issueType": {
+            "$ref": "#/components/schemas/JiraNamedIcon"
+          },
+          "key": {
+            "type": "string"
+          },
+          "priority": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/JiraNamedIcon"
+              }
+            ]
+          },
+          "projectKey": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/JiraStatus"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "updated": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "summary",
+          "status",
+          "issueType",
+          "projectKey",
+          "updated",
+          "url"
+        ],
+        "type": "object"
+      },
+      "JiraIssueType": {
+        "properties": {
+          "iconUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "subtask": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "subtask"
+        ],
+        "type": "object"
+      },
+      "JiraNamedIcon": {
+        "properties": {
+          "iconUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "JiraProject": {
+        "properties": {
+          "avatarUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "key",
+          "name"
+        ],
+        "type": "object"
+      },
+      "JiraQueueKey": {
+        "enum": [
+          "assigned",
+          "previously_mine",
+          "reported",
+          "watching",
+          "active_sprint"
+        ],
+        "type": "string"
+      },
+      "JiraQueueResult": {
+        "properties": {
+          "approximateTotal": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "error": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/QueueErrorKind"
+              }
+            ]
+          },
+          "isLast": {
+            "type": "boolean"
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/JiraIssueSummary"
+            },
+            "type": "array"
+          },
+          "key": {
+            "$ref": "#/components/schemas/JiraQueueKey"
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "key",
+          "issues",
+          "isLast"
+        ],
+        "type": "object"
+      },
+      "JiraStatus": {
+        "properties": {
+          "category": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "category"
+        ],
+        "type": "object"
+      },
+      "JiraTransition": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "toCategory": {
+            "type": "string"
+          },
+          "toStatus": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "toStatus",
+          "toCategory"
+        ],
+        "type": "object"
+      },
+      "JiraUser": {
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "avatarUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "emailAddress": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "accountId",
+          "displayName"
+        ],
+        "type": "object"
+      },
+      "JiraValidationStatus": {
+        "enum": [
+          "valid",
+          "invalid",
+          "missing_permissions",
+          "unknown"
+        ],
+        "type": "string"
+      },
+      "JiraWorklogInput": {
+        "properties": {
+          "comment": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "started": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "timeSpent": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "timeSpent"
+        ],
+        "type": "object"
+      },
+      "MeResponse": {
+        "properties": {
+          "avatarUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "MergePullBody": {
+        "properties": {
+          "method": {
+            "$ref": "#/components/schemas/GithubMergeMethod"
+          },
+          "number": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "repo": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "owner",
+          "repo",
+          "number",
+          "method"
+        ],
+        "type": "object"
+      },
+      "OkResponse": {
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "type": "object"
+      },
+      "ProjectsBody": {
+        "properties": {
+          "projects": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "projects"
+        ],
+        "type": "object"
+      },
+      "PullsBody": {
+        "properties": {
+          "refs": {
+            "items": {
+              "$ref": "#/components/schemas/GithubPullRef"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "refs"
+        ],
+        "type": "object"
+      },
+      "QueueErrorKind": {
+        "description": "Whether a failing dashboard queue should degrade quietly (Agile/sprint\nfeatures absent on a non-Software site) or surface as a real error.",
+        "enum": [
+          "feature_unavailable",
+          "error"
+        ],
+        "type": "string"
+      },
+      "RepoSelection": {
+        "description": "`GET /me/github/repos` response.",
+        "properties": {
+          "available": {
+            "items": {
+              "$ref": "#/components/schemas/GithubRepoOption"
+            },
+            "type": "array"
+          },
+          "selected": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "available",
+          "selected"
+        ],
+        "type": "object"
+      },
+      "ReposBody": {
+        "properties": {
+          "repos": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "repos"
+        ],
+        "type": "object"
+      },
+      "SearchBody": {
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "jql": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "jql"
+        ],
+        "type": "object"
+      },
+      "SetFavoritesBody": {
+        "properties": {
+          "repoFullName": {
+            "type": "string"
+          },
+          "workflowIds": {
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "repoFullName",
+          "workflowIds"
+        ],
+        "type": "object"
+      },
+      "TokenBody": {
+        "properties": {
+          "token": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "type": "object"
+      },
+      "TransitionBody": {
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "transitionId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "transitionId"
+        ],
+        "type": "object"
+      },
+      "WorklogBody": {
+        "properties": {
+          "comment": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "key": {
+            "type": "string"
+          },
+          "started": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "timeSpent": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "timeSpent"
+        ],
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "bearer": {
+        "bearerFormat": "JWT",
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "description": "Rust port of the Workflow backend (GitHub + Jira integrations).",
+    "license": {
+      "identifier": "UNLICENSED",
+      "name": "UNLICENSED"
+    },
+    "title": "Workflow API",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/health": {
+      "get": {
+        "operationId": "getHealth",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "`GET /api/health` → `{ status: \"ok\", time: ISO8601 }`.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/api/hello/{name}": {
+      "get": {
+        "operationId": "getHello",
+        "parameters": [
+          {
+            "description": "Name to greet",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HelloResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "`GET /api/hello/:name` → `{ greeting: \"Hello, {name}!\" }`.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/api/me": {
+      "get": {
+        "operationId": "getMe",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "me"
+        ]
+      }
+    },
+    "/api/me/github": {
+      "delete": {
+        "operationId": "githubDisconnect",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DisconnectedResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "DELETE /me/github — disconnect; clears caches.",
+        "tags": [
+          "github"
+        ]
+      },
+      "get": {
+        "operationId": "githubStatus",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GithubConnectionSummary"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "GET /me/github — connection summary.",
+        "tags": [
+          "github"
+        ]
+      }
+    },
+    "/api/me/github/branches": {
+      "get": {
+        "operationId": "githubBranches",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/GithubRepoBranches"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "GET /me/github/branches — branch→PR prompts across selected repos.",
+        "tags": [
+          "github"
+        ]
+      }
+    },
+    "/api/me/github/dashboard": {
+      "get": {
+        "operationId": "githubDashboard",
+        "parameters": [
+          {
+            "description": "Queue tab (default assigned)",
+            "in": "query",
+            "name": "tab",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GithubDashboard"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "GET /me/github/dashboard?tab= — SWR dashboard (counts + active queue).",
+        "tags": [
+          "github"
+        ]
+      }
+    },
+    "/api/me/github/favorites": {
+      "get": {
+        "operationId": "githubFavorites",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Map of repoFullName -> workflow ids"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "GET /me/github/favorites — the user's favorite workflows per repo.",
+        "tags": [
+          "github"
+        ]
+      },
+      "put": {
+        "operationId": "githubSetFavorites",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetFavoritesBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Map of repoFullName -> workflow ids"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "PUT /me/github/favorites — set one repo's favorites; returns the full map.",
+        "tags": [
+          "github"
+        ]
+      }
+    },
+    "/api/me/github/pull": {
+      "get": {
+        "operationId": "githubPull",
+        "parameters": [
+          {
+            "description": "Repo owner",
+            "in": "query",
+            "name": "owner",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Repo name",
+            "in": "query",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "PR number",
+            "in": "query",
+            "name": "number",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GithubPullRequestEnrichment"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "GET /me/github/pull?owner&repo&number — enrich a single PR.",
+        "tags": [
+          "github"
+        ]
+      }
+    },
+    "/api/me/github/pull/close": {
+      "post": {
+        "operationId": "githubClosePull",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClosePullBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "POST /me/github/pull/close — close a PR.",
+        "tags": [
+          "github"
+        ]
+      }
+    },
+    "/api/me/github/pull/merge": {
+      "post": {
+        "operationId": "githubMergePull",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MergePullBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GithubMergePullResult"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "POST /me/github/pull/merge — merge a PR.",
+        "tags": [
+          "github"
+        ]
+      }
+    },
+    "/api/me/github/pulls": {
+      "post": {
+        "operationId": "githubCreatePull",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePullBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GithubCreatePullResult"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "POST /me/github/pulls — create a PR.",
+        "tags": [
+          "github"
+        ]
+      }
+    },
+    "/api/me/github/pulls/enrich": {
+      "post": {
+        "operationId": "githubPullsEnrich",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PullsBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/GithubPullEnrichmentResult"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "POST /me/github/pulls/enrich — batch-enrich the supplied PR refs.",
+        "tags": [
+          "github"
+        ]
+      }
+    },
+    "/api/me/github/queue": {
+      "get": {
+        "operationId": "githubQueue",
+        "parameters": [
+          {
+            "description": "Queue key",
+            "in": "query",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GithubPullRequestQueue"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "GET /me/github/queue?key= — a single queue's PRs.",
+        "tags": [
+          "github"
+        ]
+      }
+    },
+    "/api/me/github/repo/branches": {
+      "get": {
+        "operationId": "githubRepoBranches",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "owner",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "GET /me/github/repo/branches?owner&repo — plain branch-name list.",
+        "tags": [
+          "github"
+        ]
+      }
+    },
+    "/api/me/github/repo/environments": {
+      "get": {
+        "operationId": "githubRepoEnvironments",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "owner",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "GET /me/github/repo/environments?owner&repo — environment names.",
+        "tags": [
+          "github"
+        ]
+      }
+    },
+    "/api/me/github/repos": {
+      "get": {
+        "operationId": "githubRepos",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RepoSelection"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "GET /me/github/repos — available repos + current selection.",
+        "tags": [
+          "github"
+        ]
+      },
+      "put": {
+        "operationId": "githubSetRepos",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReposBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GithubConnectionSummary"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "PUT /me/github/repos — set selection; nulls snapshot, clears caches.",
+        "tags": [
+          "github"
+        ]
+      }
+    },
+    "/api/me/github/token": {
+      "post": {
+        "operationId": "githubConnect",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TokenBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GithubConnectionSummary"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "POST /me/github/token — validate against GitHub, then store.",
+        "tags": [
+          "github"
+        ]
+      }
+    },
+    "/api/me/github/token/validate": {
+      "post": {
+        "operationId": "githubValidate",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GithubConnectionSummary"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "POST /me/github/token/validate — re-validate the stored token.",
+        "tags": [
+          "github"
+        ]
+      }
+    },
+    "/api/me/github/workflow/dispatch": {
+      "post": {
+        "operationId": "githubWorkflowDispatch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DispatchBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "POST /me/github/workflow/dispatch — trigger a workflow_dispatch.",
+        "tags": [
+          "github"
+        ]
+      }
+    },
+    "/api/me/github/workflow/inputs": {
+      "get": {
+        "operationId": "githubWorkflowInputs",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "owner",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Workflow file path",
+            "in": "query",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GithubWorkflowInputs"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "GET /me/github/workflow/inputs?owner&repo&path — workflow_dispatch inputs.",
+        "tags": [
+          "github"
+        ]
+      }
+    },
+    "/api/me/github/workflow/runs": {
+      "get": {
+        "operationId": "githubWorkflowRuns",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "owner",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "workflowId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "branch",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/GithubWorkflowRunSummary"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "GET /me/github/workflow/runs?owner&repo&workflowId&branch — recent dispatch runs.",
+        "tags": [
+          "github"
+        ]
+      }
+    },
+    "/api/me/github/workflows": {
+      "get": {
+        "operationId": "githubWorkflows",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/GithubRepoWorkflows"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "GET /me/github/workflows — active workflows across selected repos.",
+        "tags": [
+          "github"
+        ]
+      }
+    },
+    "/api/me/jira": {
+      "delete": {
+        "operationId": "jiraDisconnect",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DisconnectedResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "DELETE /me/jira — disconnect.",
+        "tags": [
+          "jira"
+        ]
+      },
+      "get": {
+        "operationId": "jiraStatus",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JiraConnectionSummary"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "GET /me/jira — connection summary.",
+        "tags": [
+          "jira"
+        ]
+      }
+    },
+    "/api/me/jira/boards": {
+      "get": {
+        "operationId": "jiraBoards",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/JiraBoard"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "GET /me/jira/boards — agile boards.",
+        "tags": [
+          "jira"
+        ]
+      }
+    },
+    "/api/me/jira/createmeta": {
+      "get": {
+        "operationId": "jiraCreateMeta",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "projectKey",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "issueTypeId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JiraCreateMeta"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "GET /me/jira/createmeta?projectKey&issueTypeId — create field metadata.",
+        "tags": [
+          "jira"
+        ]
+      }
+    },
+    "/api/me/jira/dashboard": {
+      "get": {
+        "operationId": "jiraDashboard",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JiraDashboard"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "GET /me/jira/dashboard — multi-queue dashboard.",
+        "tags": [
+          "jira"
+        ]
+      }
+    },
+    "/api/me/jira/editmeta": {
+      "get": {
+        "operationId": "jiraEditMeta",
+        "parameters": [
+          {
+            "description": "Issue key",
+            "in": "query",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JiraEditMeta"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "GET /me/jira/editmeta?key — edit field metadata.",
+        "tags": [
+          "jira"
+        ]
+      }
+    },
+    "/api/me/jira/issue": {
+      "get": {
+        "operationId": "jiraIssue",
+        "parameters": [
+          {
+            "description": "Issue key",
+            "in": "query",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JiraIssueDetail"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "GET /me/jira/issue?key — issue detail.",
+        "tags": [
+          "jira"
+        ]
+      },
+      "post": {
+        "operationId": "jiraCreateIssue",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JiraCreateIssueInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JiraCreateIssueResult"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "POST /me/jira/issue — create an issue (fields pass the metadata allowlist).",
+        "tags": [
+          "jira"
+        ]
+      },
+      "put": {
+        "operationId": "jiraEditIssue",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EditBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "PUT /me/jira/issue — edit an issue.",
+        "tags": [
+          "jira"
+        ]
+      }
+    },
+    "/api/me/jira/issue/assign": {
+      "post": {
+        "operationId": "jiraAssign",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssignBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "POST /me/jira/issue/assign — (re)assign or unassign (null).",
+        "tags": [
+          "jira"
+        ]
+      }
+    },
+    "/api/me/jira/issue/comment": {
+      "post": {
+        "operationId": "jiraComment",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommentBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JiraComment"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "POST /me/jira/issue/comment — add a comment.",
+        "tags": [
+          "jira"
+        ]
+      }
+    },
+    "/api/me/jira/issue/transition": {
+      "post": {
+        "operationId": "jiraTransition",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransitionBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "POST /me/jira/issue/transition — apply a transition.",
+        "tags": [
+          "jira"
+        ]
+      }
+    },
+    "/api/me/jira/issue/transitions": {
+      "get": {
+        "operationId": "jiraTransitions",
+        "parameters": [
+          {
+            "description": "Issue key",
+            "in": "query",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/JiraTransition"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "GET /me/jira/issue/transitions?key — available transitions.",
+        "tags": [
+          "jira"
+        ]
+      }
+    },
+    "/api/me/jira/issue/worklog": {
+      "post": {
+        "operationId": "jiraWorklog",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorklogBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "POST /me/jira/issue/worklog — log work.",
+        "tags": [
+          "jira"
+        ]
+      }
+    },
+    "/api/me/jira/issuetypes": {
+      "get": {
+        "operationId": "jiraIssueTypes",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "projectKey",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/JiraIssueType"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "GET /me/jira/issuetypes?projectKey — issue types for a project.",
+        "tags": [
+          "jira"
+        ]
+      }
+    },
+    "/api/me/jira/projects": {
+      "get": {
+        "operationId": "jiraProjects",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/JiraProject"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "GET /me/jira/projects — selectable projects.",
+        "tags": [
+          "jira"
+        ]
+      },
+      "put": {
+        "operationId": "jiraSetProjects",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectsBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JiraConnectionSummary"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "PUT /me/jira/projects — set selected projects.",
+        "tags": [
+          "jira"
+        ]
+      }
+    },
+    "/api/me/jira/queue": {
+      "get": {
+        "operationId": "jiraQueue",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JiraIssuePage"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "GET /me/jira/queue?key&cursor — one queue's issue page.",
+        "tags": [
+          "jira"
+        ]
+      }
+    },
+    "/api/me/jira/search": {
+      "post": {
+        "operationId": "jiraSearch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SearchBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JiraIssuePage"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "POST /me/jira/search — arbitrary JQL search.",
+        "tags": [
+          "jira"
+        ]
+      }
+    },
+    "/api/me/jira/sprint/issues": {
+      "get": {
+        "operationId": "jiraSprintIssues",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "boardId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JiraIssuePage"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "GET /me/jira/sprint/issues?boardId — active sprint issues.",
+        "tags": [
+          "jira"
+        ]
+      }
+    },
+    "/api/me/jira/token": {
+      "post": {
+        "operationId": "jiraConnect",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JiraConnectionSummary"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "POST /me/jira/token — validate credentials against Jira, then store.",
+        "tags": [
+          "jira"
+        ]
+      }
+    },
+    "/api/me/jira/token/validate": {
+      "post": {
+        "operationId": "jiraValidate",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JiraConnectionSummary"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "POST /me/jira/token/validate — re-validate the stored credentials.",
+        "tags": [
+          "jira"
+        ]
+      }
+    },
+    "/api/me/jira/users": {
+      "get": {
+        "operationId": "jiraUsers",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "issueKey",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "projectKeyOrId",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "actionDescriptorId",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/JiraUser"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "GET /me/jira/users — assignable user search.",
+        "tags": [
+          "jira"
+        ]
+      }
+    }
+  },
+  "tags": [
+    {
+      "description": "Liveness and info",
+      "name": "system"
+    },
+    {
+      "description": "Authenticated user",
+      "name": "me"
+    },
+    {
+      "description": "GitHub integration",
+      "name": "github"
+    },
+    {
+      "description": "Jira integration",
+      "name": "jira"
+    }
+  ]
+}
