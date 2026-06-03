@@ -8,7 +8,7 @@ use wf_github::{GithubPullRef, GithubQueueKey, RepoRef};
 
 use crate::auth::AuthUser;
 use crate::error::AppError;
-use crate::github::{dashboard, pat};
+use crate::github::{activity, dashboard, pat};
 use crate::state::AppState;
 
 #[derive(Deserialize)]
@@ -41,6 +41,32 @@ struct PullQuery {
 #[derive(Deserialize)]
 struct PullsBody {
     refs: Vec<GithubPullRef>,
+}
+
+#[derive(Deserialize)]
+struct RepoQuery {
+    owner: String,
+    repo: String,
+}
+
+#[derive(Deserialize)]
+struct WorkflowInputsQuery {
+    owner: String,
+    repo: String,
+    path: String,
+}
+
+#[derive(Deserialize)]
+struct WorkflowRunsQuery {
+    owner: String,
+    repo: String,
+    #[serde(rename = "workflowId")]
+    workflow_id: String,
+    branch: String,
+}
+
+fn ref_of(owner: &str, repo: &str) -> RepoRef {
+    RepoRef { owner: owner.to_string(), repo: repo.to_string() }
 }
 
 fn user_id(user: &AuthUser) -> Result<Uuid, AppError> {
@@ -143,6 +169,76 @@ async fn pulls_route(
     Ok(HttpResponse::Ok().json(r))
 }
 
+/// GET /me/github/branches — branch→PR prompts across selected repos.
+async fn branches_route(
+    state: web::Data<AppState>,
+    user: AuthUser,
+) -> Result<HttpResponse, AppError> {
+    let r = activity::list_branches(&state, user_id(&user)?).await?;
+    Ok(HttpResponse::Ok().json(r))
+}
+
+/// GET /me/github/workflows — active workflows across selected repos.
+async fn workflows_route(
+    state: web::Data<AppState>,
+    user: AuthUser,
+) -> Result<HttpResponse, AppError> {
+    let r = activity::list_workflows(&state, user_id(&user)?).await?;
+    Ok(HttpResponse::Ok().json(r))
+}
+
+/// GET /me/github/workflow/inputs?owner&repo&path — workflow_dispatch inputs.
+async fn workflow_inputs_route(
+    state: web::Data<AppState>,
+    user: AuthUser,
+    q: web::Query<WorkflowInputsQuery>,
+) -> Result<HttpResponse, AppError> {
+    let r =
+        activity::workflow_inputs(&state, user_id(&user)?, ref_of(&q.owner, &q.repo), &q.path).await?;
+    Ok(HttpResponse::Ok().json(r))
+}
+
+/// GET /me/github/repo/branches?owner&repo — plain branch-name list.
+async fn repo_branches_route(
+    state: web::Data<AppState>,
+    user: AuthUser,
+    q: web::Query<RepoQuery>,
+) -> Result<HttpResponse, AppError> {
+    let r = activity::repo_branches(&state, user_id(&user)?, ref_of(&q.owner, &q.repo)).await?;
+    Ok(HttpResponse::Ok().json(r))
+}
+
+/// GET /me/github/repo/environments?owner&repo — environment names.
+async fn environments_route(
+    state: web::Data<AppState>,
+    user: AuthUser,
+    q: web::Query<RepoQuery>,
+) -> Result<HttpResponse, AppError> {
+    let r = activity::environments(&state, user_id(&user)?, ref_of(&q.owner, &q.repo)).await?;
+    Ok(HttpResponse::Ok().json(r))
+}
+
+/// GET /me/github/workflow/runs?owner&repo&workflowId&branch — recent dispatch runs.
+async fn workflow_runs_route(
+    state: web::Data<AppState>,
+    user: AuthUser,
+    q: web::Query<WorkflowRunsQuery>,
+) -> Result<HttpResponse, AppError> {
+    let workflow_id: i64 = q
+        .workflow_id
+        .parse()
+        .map_err(|_| AppError::validation(format!("invalid workflowId: {}", q.workflow_id)))?;
+    let r = activity::workflow_runs(
+        &state,
+        user_id(&user)?,
+        ref_of(&q.owner, &q.repo),
+        workflow_id,
+        &q.branch,
+    )
+    .await?;
+    Ok(HttpResponse::Ok().json(r))
+}
+
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.route("/me/github", web::get().to(status))
         .route("/me/github/token", web::post().to(connect))
@@ -153,5 +249,11 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .route("/me/github/repos", web::get().to(repos_route))
         .route("/me/github/repos", web::put().to(set_repos_route))
         .route("/me/github/pull", web::get().to(pull_route))
-        .route("/me/github/pulls/enrich", web::post().to(pulls_route));
+        .route("/me/github/pulls/enrich", web::post().to(pulls_route))
+        .route("/me/github/branches", web::get().to(branches_route))
+        .route("/me/github/workflows", web::get().to(workflows_route))
+        .route("/me/github/workflow/inputs", web::get().to(workflow_inputs_route))
+        .route("/me/github/workflow/runs", web::get().to(workflow_runs_route))
+        .route("/me/github/repo/branches", web::get().to(repo_branches_route))
+        .route("/me/github/repo/environments", web::get().to(environments_route));
 }

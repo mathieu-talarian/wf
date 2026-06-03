@@ -2,12 +2,19 @@
 //! machine, and (Phase 3 cont.) the GraphQL dashboard query + activity calls.
 //! Migration plan §10.1.
 
+pub mod activity;
 pub mod client;
 pub mod dashboard;
 pub mod errors;
 pub mod types;
 pub mod validate;
 
+pub use activity::{
+    fetch_branch_prompts, fetch_workflow_inputs, fetch_workflows, list_environments,
+    list_repo_branch_names, list_workflow_runs, GithubBranchPrompt, GithubRepoBranches,
+    GithubRepoWorkflows, GithubWorkflowInput, GithubWorkflowInputType, GithubWorkflowInputs,
+    GithubWorkflowSummary,
+};
 pub use client::{parse_repo_ref, GithubClient, RepoRef};
 pub use dashboard::enrich::{enrich_pull_request, enrich_pull_requests};
 pub use dashboard::types::{

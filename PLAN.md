@@ -12,9 +12,9 @@ Working checklist for the remaining migration, derived from `2026-06-03-ts-to-ru
 ## Status snapshot
 - ✅ Phase 0 spikes (DB session pooler, AES-GCM on real row, JWKS ES256)
 - ✅ Phase 1 skeleton · ✅ Phase 2 auth + `/me`
-- ✅ Phase 3a GitHub client + PAT validation · ✅ 3b connection flow · ✅ 3c dashboard (data + routes + SWR) · ✅ 3c.3 PR enrichment
+- ✅ Phase 3a GitHub client + PAT validation · ✅ 3b connection flow · ✅ 3c dashboard (data + routes + SWR) · ✅ 3c.3 PR enrichment · ✅ 3d.1 activity reads
 - ✅ Dependency upgrade (reqwest 0.13, jsonwebtoken 10, sqlx 0.9, sea-orm 2.0-rc, getrandom 0.4)
-- **Endpoints done: 15 / 48** — `/health`, `/hello/:name`, `/me`, `/me/github` (4 conn), `/me/github/{dashboard,queue,repos}` GET + `repos` PUT, `/me/github/pull` GET + `/me/github/pulls/enrich` POST.
+- **Endpoints done: 21 / 48** — `/health`, `/hello/:name`, `/me`, `/me/github` (4 conn), `/me/github/{dashboard,queue,repos}` GET + `repos` PUT, `/me/github/pull` GET + `/me/github/pulls/enrich` POST, `/me/github/{branches,workflows,workflow/inputs,workflow/runs,repo/branches,repo/environments}` GET.
 
 ---
 
@@ -26,12 +26,13 @@ Working checklist for the remaining migration, derived from `2026-06-03-ts-to-ru
 - **Endpoints:** `GET /me/github/pull` (owner,repo,number) + `POST /me/github/pulls/enrich` ({refs}) — both `resolve_pat` → "No GitHub token connected" when unconnected.
 - **Verified:** `cargo run -p wf-db --example gh_pr_enrich` enriched live PR `ScriptAddicts/gpt-for-excel-word#2001` (behind/blocked, 12 checks, latestRun). 5 unit tests for normalize/select/approval/badges.
 
-### 3d.1 — Activity reads  ⏳ NEXT
+### 3d.1 — Activity reads  ✅ DONE
 - **Source:** `github/branches.ts`, `branches-graphql.ts`, `workflows/{workflows,inputs,environments}.ts`, `activity/*`.
+- **Built:** `crates/github/src/activity/` — `branches`(+`branches_graphql` query/decode/select), `workflows` (active workflows + dispatch runs), `inputs` (Contents API + `serde_yaml` parse, `on`-key 1.1/1.2 guard), `environments`, `types`. Branch/workflow sweeps swallow per-repo errors into an `error` field (lenient partial-GraphQL read for branches); ref-scoped reads propagate failures as `GithubError::Api`. API `github/activity.rs` (`require_pat` → "No GitHub token connected"); 6 GET routes; `workflowId` parsed server-side. 7 unit tests (selectBranches + parseWorkflowInputs).
 - **Endpoints:** `GET /me/github/{branches,workflows,workflow/inputs,workflow/runs,repo/branches,repo/environments}`.
-- **Note:** workflow inputs YAML → `serde_yaml`. Numeric query params arrive as strings → parse server-side.
+- **Verified:** `cargo run -p wf-db --example gh_activity` — 7 repos' workflows, inputs parsed (`type: environment/boolean` + defaults), 100 branches, 6 environments, runs (200/parsed).
 
-### 3d.2 — Activity writes
+### 3d.2 — Activity writes  ⏳ NEXT
 - **Source:** `github/pulls.ts`, `activity/runners.ts`, `write-runners`.
 - **Endpoints:** `POST /me/github/workflow/dispatch`, `POST /me/github/pulls` (create), `POST /me/github/pull/merge`, `POST /me/github/pull/close`.
 - **Note:** failures → `GithubError::Write { status, message }` (passthrough 403/404/422), slug `github-write-failed`.
