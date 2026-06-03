@@ -13,9 +13,9 @@ Working checklist for the remaining migration, derived from `2026-06-03-ts-to-ru
 - ✅ Phase 0 spikes (DB session pooler, AES-GCM on real row, JWKS ES256)
 - ✅ Phase 1 skeleton · ✅ Phase 2 auth + `/me`
 - ✅ Phase 3 GitHub COMPLETE — 3a/3b/3c/3c.3/3d.1/3d.2/3d.3
-- ✅ Phase 4 Jira: 4a client+validate · 4b connection · 4c data+mappers (4d actions next)
+- ✅ Phase 4 Jira COMPLETE — 4a client+validate · 4b connection · 4c data+mappers · 4d actions
 - ✅ Dependency upgrade (reqwest 0.13, jsonwebtoken 10, sqlx 0.9, sea-orm 2.0-rc, getrandom 0.4)
-- **Endpoints done: 44 / 48** (GitHub 27 + Jira conn 5 + Jira data 12) — `/health`, `/hello/:name`, `/me`, `/me/github` (4 conn), `/me/github/{dashboard,queue,repos}` GET + `repos` PUT, `/me/github/pull` GET + `/me/github/pulls/enrich` POST, `/me/github/{branches,workflows,workflow/inputs,workflow/runs,repo/branches,repo/environments}` GET, `/me/github/{workflow/dispatch,pulls,pull/merge,pull/close}` POST, `/me/github/favorites` GET+PUT. (All GitHub endpoints done; Jira next.)
+- **Endpoints done: 48 / 48** — ALL §14 routes (GitHub 22 + Jira 23 + `/me` + health/hello). Phase 5 (OpenAPI + web client) next. — `/health`, `/hello/:name`, `/me`, `/me/github` (4 conn), `/me/github/{dashboard,queue,repos}` GET + `repos` PUT, `/me/github/pull` GET + `/me/github/pulls/enrich` POST, `/me/github/{branches,workflows,workflow/inputs,workflow/runs,repo/branches,repo/environments}` GET, `/me/github/{workflow/dispatch,pulls,pull/merge,pull/close}` POST, `/me/github/favorites` GET+PUT. (All GitHub endpoints done; Jira next.)
 
 ---
 
@@ -68,9 +68,11 @@ Working checklist for the remaining migration, derived from `2026-06-03-ts-to-ru
 - **Verified:** 52 unit tests (ported suites). Live data path needs real Jira creds (deferred — same as 4a/4b).
 - **Minor parity note:** editmeta field order is by fieldId (BTreeMap) vs Jira's insertion order; createmeta uses an array (order preserved).
 
-### 4d — Jira actions
-- **Source:** `jira/routes/actions.ts`, `action-runners.ts`.
+### 4d — Jira actions  ✅ DONE
+- **Source:** `jira/write-runners.ts`, `routes/actions.ts`.
+- **Built:** `wf-jira` `issues/writes.rs` (transition/comment/assign/worklog/create/edit). Create & edit run user `fields` through the createmeta/editmeta allowlist (`build_issue_fields`; create drops `project`/`issuetype`, sets them explicitly, enforce_required=true; edit enforce_required=false). `JiraActionError` union (`Api` 502 for the metadata fetch, `Write` status-passthrough/400 for the mutation + allowlist rejection) → `AppError`. `wf-api/jira/actions.rs` + 6 routes.
 - **Endpoints:** `POST /me/jira/issue/{transition,comment,assign,worklog}`, `POST /me/jira/issue` (create), `PUT /me/jira/issue` (edit).
+- **Verified:** field-coercion allowlist covered by the ported `fields` unit tests; live mutation path needs real Jira creds (deferred).
 
 ---
 

@@ -12,6 +12,7 @@ pub mod jql;
 pub mod mappers;
 pub mod reads;
 pub mod search;
+pub mod writes;
 
 /// `encodeURIComponent` equivalent for path segments (issue keys, project keys,
 /// numeric ids).

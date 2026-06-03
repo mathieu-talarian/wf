@@ -56,7 +56,7 @@ struct RawStatus {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-struct RawComment {
+pub struct RawComment {
     id: Option<String>,
     author: Option<RawUser>,
     body: Option<Value>,
@@ -185,7 +185,7 @@ pub fn map_issue_summary(site_url: &str, raw: &RawIssue) -> JiraIssueSummary {
     }
 }
 
-fn map_comment(raw: &RawComment) -> JiraComment {
+pub fn map_comment(raw: &RawComment) -> JiraComment {
     JiraComment {
         id: raw.id.clone().unwrap_or_default(),
         author: map_user(raw.author.as_ref()),

@@ -56,6 +56,14 @@ async fn load_connected(state: &AppState, user_id: Uuid) -> Result<Connected, Ap
     Ok(Connected { row, client })
 }
 
+/// Connection's client only (port of `loadConnected` for the write paths).
+pub(crate) async fn connected_client(
+    state: &AppState,
+    user_id: Uuid,
+) -> Result<JiraClient, AppError> {
+    Ok(load_connected(state, user_id).await?.client)
+}
+
 /// `GET /me/jira/dashboard` (port of `runDashboard`): disconnected payload when
 /// no row, else every queue with a best-effort `touch_last_used`.
 pub async fn dashboard(state: &AppState, user_id: Uuid) -> Result<JiraDashboard, AppError> {

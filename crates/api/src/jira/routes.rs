@@ -4,12 +4,48 @@
 use actix_web::{web, HttpResponse};
 use sea_orm::prelude::Uuid;
 use serde::Deserialize;
-use wf_jira::{AssignableQuery, JiraConnectInput, JiraQueueKey};
+use serde_json::{Map, Value};
+use wf_jira::{AssignableQuery, JiraConnectInput, JiraCreateIssueInput, JiraQueueKey, JiraWorklogInput};
 
 use crate::auth::AuthUser;
 use crate::error::AppError;
-use crate::jira::{data, pat};
+use crate::jira::{actions, data, pat};
 use crate::state::AppState;
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TransitionBody {
+    key: String,
+    transition_id: String,
+}
+
+#[derive(Deserialize)]
+struct CommentBody {
+    key: String,
+    body: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AssignBody {
+    key: String,
+    account_id: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WorklogBody {
+    key: String,
+    time_spent: String,
+    started: Option<String>,
+    comment: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct EditBody {
+    key: String,
+    fields: Map<String, Value>,
+}
 
 fn cursor_of(raw: &Option<String>) -> Option<&str> {
     raw.as_deref().filter(|s| !s.is_empty())
@@ -240,6 +276,71 @@ async fn edit_meta(
     Ok(HttpResponse::Ok().json(r))
 }
 
+/// POST /me/jira/issue/transition — apply a transition.
+async fn transition(
+    state: web::Data<AppState>,
+    user: AuthUser,
+    body: web::Json<TransitionBody>,
+) -> Result<HttpResponse, AppError> {
+    actions::transition(&state, user_id(&user)?, &body.key, &body.transition_id).await?;
+    Ok(HttpResponse::Ok().json(serde_json::json!({ "ok": true })))
+}
+
+/// POST /me/jira/issue/comment — add a comment.
+async fn comment(
+    state: web::Data<AppState>,
+    user: AuthUser,
+    body: web::Json<CommentBody>,
+) -> Result<HttpResponse, AppError> {
+    let c = actions::comment(&state, user_id(&user)?, &body.key, &body.body).await?;
+    Ok(HttpResponse::Ok().json(c))
+}
+
+/// POST /me/jira/issue/assign — (re)assign or unassign (null).
+async fn assign(
+    state: web::Data<AppState>,
+    user: AuthUser,
+    body: web::Json<AssignBody>,
+) -> Result<HttpResponse, AppError> {
+    actions::assign(&state, user_id(&user)?, &body.key, body.account_id.as_deref()).await?;
+    Ok(HttpResponse::Ok().json(serde_json::json!({ "ok": true })))
+}
+
+/// POST /me/jira/issue/worklog — log work.
+async fn worklog(
+    state: web::Data<AppState>,
+    user: AuthUser,
+    body: web::Json<WorklogBody>,
+) -> Result<HttpResponse, AppError> {
+    let input = JiraWorklogInput {
+        time_spent: body.time_spent.clone(),
+        started: body.started.clone(),
+        comment: body.comment.clone(),
+    };
+    actions::worklog(&state, user_id(&user)?, &body.key, &input).await?;
+    Ok(HttpResponse::Ok().json(serde_json::json!({ "ok": true })))
+}
+
+/// POST /me/jira/issue — create an issue (fields pass the metadata allowlist).
+async fn create_issue(
+    state: web::Data<AppState>,
+    user: AuthUser,
+    body: web::Json<JiraCreateIssueInput>,
+) -> Result<HttpResponse, AppError> {
+    let r = actions::create(&state, user_id(&user)?, &body).await?;
+    Ok(HttpResponse::Ok().json(r))
+}
+
+/// PUT /me/jira/issue — edit an issue.
+async fn edit_issue(
+    state: web::Data<AppState>,
+    user: AuthUser,
+    body: web::Json<EditBody>,
+) -> Result<HttpResponse, AppError> {
+    actions::edit(&state, user_id(&user)?, &body.key, &body.fields).await?;
+    Ok(HttpResponse::Ok().json(serde_json::json!({ "ok": true })))
+}
+
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.route("/me/jira", web::get().to(status))
         .route("/me/jira/token", web::post().to(connect))
@@ -258,5 +359,12 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .route("/me/jira/issue/transitions", web::get().to(transitions))
         .route("/me/jira/users", web::get().to(users))
         .route("/me/jira/createmeta", web::get().to(create_meta))
-        .route("/me/jira/editmeta", web::get().to(edit_meta));
+        .route("/me/jira/editmeta", web::get().to(edit_meta))
+        // Actions (writes)
+        .route("/me/jira/issue/transition", web::post().to(transition))
+        .route("/me/jira/issue/comment", web::post().to(comment))
+        .route("/me/jira/issue/assign", web::post().to(assign))
+        .route("/me/jira/issue/worklog", web::post().to(worklog))
+        .route("/me/jira/issue", web::post().to(create_issue))
+        .route("/me/jira/issue", web::put().to(edit_issue));
 }

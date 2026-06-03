@@ -41,3 +41,22 @@ pub struct JiraWriteError {
 #[derive(Debug, Clone, Error)]
 #[error("{0}")]
 pub struct JiraNotConnected(pub String);
+
+/// The write-path error union (port of `write-runners.ts` `WriteErrorT`): an
+/// upstream read failure stays a `JiraApiError` (502), while the mutation itself
+/// and metadata-allowlist rejections surface as a `JiraWriteError` (status
+/// passthrough / 400).
+#[derive(Debug, Clone, Error)]
+pub enum JiraActionError {
+    #[error(transparent)]
+    Api(JiraApiError),
+    #[error(transparent)]
+    Write(JiraWriteError),
+}
+
+impl JiraActionError {
+    /// Map a failed mutation request to a write error (port of `asWrite`).
+    pub fn as_write(e: JiraApiError) -> Self {
+        Self::Write(JiraWriteError { status: e.status, message: e.message })
+    }
+}

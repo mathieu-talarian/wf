@@ -13,7 +13,10 @@ use wf_core::auth::AuthError;
 use wf_core::problem::ProblemDetails;
 use wf_github::errors::{GithubError, PatValidationError};
 use wf_github::PatValidationStatus;
-use wf_jira::{JiraApiError, JiraNotConnected, JiraValidationError, JiraValidationStatus, JiraWriteError};
+use wf_jira::{
+    JiraActionError, JiraApiError, JiraNotConnected, JiraValidationError, JiraValidationStatus,
+    JiraWriteError,
+};
 
 #[derive(Debug, thiserror::Error)]
 enum ErrorKind {
@@ -264,6 +267,15 @@ impl From<JiraWriteError> for AppError {
 impl From<JiraNotConnected> for AppError {
     fn from(e: JiraNotConnected) -> Self {
         Self::of(ErrorKind::JiraNotConnected(e))
+    }
+}
+
+impl From<JiraActionError> for AppError {
+    fn from(e: JiraActionError) -> Self {
+        match e {
+            JiraActionError::Api(e) => Self::from(e),
+            JiraActionError::Write(e) => Self::from(e),
+        }
     }
 }
 

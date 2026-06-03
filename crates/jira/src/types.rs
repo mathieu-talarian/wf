@@ -180,6 +180,22 @@ pub struct JiraCreateIssueResult {
     pub key: String,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JiraWorklogInput {
+    pub time_spent: String,
+    pub started: Option<String>,
+    pub comment: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JiraCreateIssueInput {
+    pub project_key: String,
+    pub issue_type_id: String,
+    pub fields: serde_json::Map<String, serde_json::Value>,
+}
+
 pub const SUMMARY_FIELDS: &[&str] =
     &["summary", "status", "assignee", "priority", "issuetype", "updated", "project"];
 

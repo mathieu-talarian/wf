@@ -11,7 +11,7 @@ pub mod types;
 pub mod validate;
 
 pub use client::{JiraClient, JiraCreds};
-pub use errors::{JiraApiError, JiraNotConnected, JiraWriteError};
+pub use errors::{JiraActionError, JiraApiError, JiraNotConnected, JiraWriteError};
 pub use site_url::{is_same_jira_origin, normalize_site_url, SiteUrlResult};
 pub use status::{classify_queue_failure, validation_status_for_http, JiraValidationStatus, QueueErrorKind};
 pub use validate::{validate_credentials, JiraConnectInput, JiraValidated, JiraValidationError};
@@ -27,5 +27,8 @@ pub use issues::jql::{build_queue_jql, quote_jql_string, JiraQueueKey, QueueJqlC
 pub use issues::reads::{
     create_meta, edit_meta, list_boards, list_issue_types, list_projects, list_transitions,
     search_users, sprint_issues, AssignableQuery,
+};
+pub use issues::writes::{
+    add_comment, assign_issue, create_issue, edit_issue, log_work, transition_issue,
 };
 pub use types::*;
