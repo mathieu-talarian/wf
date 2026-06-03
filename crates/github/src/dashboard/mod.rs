@@ -9,10 +9,12 @@ pub mod types;
 
 use std::collections::HashMap;
 
+use reqwest::Method;
 use serde::Deserialize;
 
 use crate::client::GithubClient;
 use crate::errors::GithubError;
+use types::GithubRepoOption;
 use query::{build_query, build_specs, chunk_repos, queue_bases, scoped_query, variables_of, Spec, ALIAS_BATCH};
 use types::{
     DashboardData, GithubDashboardActor, GithubDashboardLabel, GithubDashboardRepository,
@@ -252,4 +254,42 @@ pub async fn fetch_queue_pulls(
         .collect();
     let results = run_all(token, specs).await?;
     Ok(to_queue(results, key, base.label))
+}
+
+#[derive(Deserialize)]
+struct ApiOwnedRepo {
+    full_name: String,
+    private: bool,
+    archived: bool,
+}
+
+/// Repos the user can select (port of `client.ts#listRepositories` /
+/// `api.ts#listOwnedRepos`): first 3 pages of `GET /user/repos`, 100/page,
+/// sorted by pushed, across owned/collaborator/org-member affiliations.
+pub async fn list_repositories(token: &str) -> Result<Vec<GithubRepoOption>, GithubError> {
+    let client = GithubClient::new(token);
+    let mut out = Vec::new();
+    for page in ["1", "2", "3"] {
+        let resp = client
+            .request(Method::GET, "/user/repos")
+            .query(&[
+                ("per_page", "100"),
+                ("sort", "pushed"),
+                ("page", page),
+                ("affiliation", "owner,collaborator,organization_member"),
+            ])
+            .send()
+            .await
+            .map_err(|e| GithubError::Api(e.to_string()))?;
+        if !resp.status().is_success() {
+            return Err(GithubError::Api(format!("repos HTTP {}", resp.status().as_u16())));
+        }
+        let repos: Vec<ApiOwnedRepo> = resp.json().await.map_err(|e| GithubError::Api(e.to_string()))?;
+        out.extend(repos.into_iter().map(|r| GithubRepoOption {
+            full_name: r.full_name,
+            is_private: r.private,
+            is_archived: r.archived,
+        }));
+    }
+    Ok(out)
 }

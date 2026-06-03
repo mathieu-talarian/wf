@@ -9,6 +9,7 @@ use wf_core::{Config, TokenCipher};
 use wf_db::Db;
 
 use crate::auth::JwksVerifier;
+use crate::github::dashboard_cache::DashboardCache;
 use crate::github::token_cache::TokenCache;
 
 // `config` is read from Phase 3+ handlers (e.g. web app URL); kept on state.
@@ -20,4 +21,5 @@ pub struct AppState {
     pub jwks: Arc<JwksVerifier>,
     pub cipher: Arc<TokenCipher>,
     pub token_cache: Arc<TokenCache>,
+    pub dashboard_cache: Arc<DashboardCache>,
 }

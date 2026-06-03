@@ -3,7 +3,7 @@
 //! Port of `github/pat/account.ts`.
 
 use sea_orm::prelude::{DateTimeWithTimeZone, Expr, Uuid};
-use sea_orm::sea_query::OnConflict;
+use sea_orm::sea_query::{OnConflict, Value as SqlValue};
 use sea_orm::ActiveValue::{NotSet, Set};
 use sea_orm::{ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter};
 use wf_core::Sealed;
@@ -107,5 +107,53 @@ pub async fn mark_validation(
 
 pub async fn disconnect(db: &DatabaseConnection, user_id: Uuid) -> Result<(), DbErr> {
     gh::Entity::delete_by_id(user_id).exec(db).await?;
+    Ok(())
+}
+
+/// Sets the selected repos and clears the durable dashboard snapshot (a repo
+/// change invalidates it). Port of `runSetSelectedRepos`.
+pub async fn set_selected_repos(
+    db: &DatabaseConnection,
+    user_id: Uuid,
+    repos: &[String],
+) -> Result<(), DbErr> {
+    let now: DateTimeWithTimeZone = chrono::Utc::now().into();
+    let arr = serde_json::Value::Array(
+        repos.iter().map(|r| serde_json::Value::String(r.clone())).collect(),
+    );
+    gh::Entity::update_many()
+        .col_expr(gh::Column::SelectedRepos, Expr::value(arr))
+        .col_expr(gh::Column::DashboardSnapshot, Expr::value(SqlValue::Json(None)))
+        .col_expr(gh::Column::UpdatedAt, Expr::value(now))
+        .filter(gh::Column::UserId.eq(user_id))
+        .exec(db)
+        .await?;
+    Ok(())
+}
+
+/// Persists `{ tab, data }` to `dashboard_snapshot` (cold-start SWR).
+pub async fn set_dashboard_snapshot(
+    db: &DatabaseConnection,
+    user_id: Uuid,
+    tab: &str,
+    data: serde_json::Value,
+) -> Result<(), DbErr> {
+    let snap = serde_json::json!({ "tab": tab, "data": data });
+    gh::Entity::update_many()
+        .col_expr(gh::Column::DashboardSnapshot, Expr::value(snap))
+        .filter(gh::Column::UserId.eq(user_id))
+        .exec(db)
+        .await?;
+    Ok(())
+}
+
+/// Bumps `last_used_at` (best-effort, fire-and-forget from the dashboard path).
+pub async fn touch_last_used(db: &DatabaseConnection, user_id: Uuid) -> Result<(), DbErr> {
+    let now: DateTimeWithTimeZone = chrono::Utc::now().into();
+    gh::Entity::update_many()
+        .col_expr(gh::Column::LastUsedAt, Expr::value(now))
+        .filter(gh::Column::UserId.eq(user_id))
+        .exec(db)
+        .await?;
     Ok(())
 }

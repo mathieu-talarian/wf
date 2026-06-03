@@ -81,6 +81,7 @@ async fn main() -> std::io::Result<()> {
         jwks,
         cipher,
         token_cache: Arc::new(crate::github::token_cache::TokenCache::default()),
+        dashboard_cache: Arc::new(crate::github::dashboard_cache::DashboardCache::default()),
     });
 
     HttpServer::new(move || {

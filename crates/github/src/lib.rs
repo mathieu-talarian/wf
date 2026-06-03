@@ -9,8 +9,8 @@ pub mod types;
 pub mod validate;
 
 pub use client::{GithubClient, RepoRef};
-pub use dashboard::types::GithubQueueKey;
-pub use dashboard::{fetch_dashboard, fetch_queue_pulls};
+pub use dashboard::types::{GithubAccountSummary, GithubDashboard, GithubQueueKey, GithubRepoOption};
+pub use dashboard::{fetch_dashboard, fetch_queue_pulls, list_repositories};
 pub use errors::{GithubError, PatValidationError};
 pub use types::{PatTokenKind, PatValidationResult, PatValidationStatus};
 pub use validate::validate_token;

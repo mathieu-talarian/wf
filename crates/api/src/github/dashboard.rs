@@ -1,0 +1,164 @@
+//! GitHub dashboard orchestration (port of `pat/dashboard-load.ts` + the data
+//! runners). Stale-while-revalidate over the in-memory cache and the durable
+//! `dashboard_snapshot`, with single-flight background refresh.
+
+use actix_web::web;
+use chrono::SecondsFormat;
+use sea_orm::prelude::Uuid;
+use serde::Serialize;
+use wf_core::Sealed;
+use wf_db::entities::github_pat_connections as gh;
+use wf_db::repositories::github_pat;
+use wf_github::{
+    fetch_dashboard, fetch_queue_pulls, list_repositories, GithubAccountSummary, GithubDashboard,
+    GithubError, GithubQueueKey, GithubRepoOption,
+};
+
+use crate::error::AppError;
+use crate::github::summary::json_string_array;
+use crate::github::token_cache::CachedPat;
+use crate::state::AppState;
+
+/// `GET /me/github/repos` response.
+#[derive(Serialize)]
+pub struct RepoSelection {
+    pub available: Vec<GithubRepoOption>,
+    pub selected: Vec<String>,
+}
+
+fn account_summary(row: &gh::Model) -> GithubAccountSummary {
+    GithubAccountSummary {
+        connected: true,
+        login: Some(row.github_login.clone()),
+        scope: row.scope.clone(),
+        connected_at: Some(
+            row.created_at
+                .with_timezone(&chrono::Utc)
+                .to_rfc3339_opts(SecondsFormat::Millis, true),
+        ),
+    }
+}
+
+/// The durable snapshot for `tab`, if it matches (`{ tab, data }`).
+fn snapshot_for(row: &gh::Model, tab: GithubQueueKey) -> Option<GithubDashboard> {
+    let snap = row.dashboard_snapshot.as_ref()?;
+    if snap.get("tab").and_then(|t| t.as_str()) != Some(tab.as_str()) {
+        return None;
+    }
+    serde_json::from_value(snap.get("data")?.clone()).ok()
+}
+
+/// Fetch fresh from GitHub; write through to the token cache, the dashboard
+/// cache, and the durable snapshot (port of `dashboard-load.ts#refresh`).
+async fn refresh(
+    state: &AppState,
+    user_id: Uuid,
+    tab: GithubQueueKey,
+    row: &gh::Model,
+) -> Result<GithubDashboard, AppError> {
+    let token = state
+        .cipher
+        .open(&Sealed {
+            ciphertext: row.access_token_ciphertext.clone(),
+            iv: row.access_token_iv.clone(),
+            auth_tag: row.access_token_auth_tag.clone(),
+        })
+        .map_err(|_| AppError::from(GithubError::Api("token decryption failed".into())))?;
+
+    let login = row.github_login.clone();
+    let repos = json_string_array(&row.selected_repos);
+    state.token_cache.set(
+        user_id,
+        CachedPat { token: token.clone(), login: login.clone(), selected_repos: repos.clone() },
+    );
+
+    let data = fetch_dashboard(&token, &login, &repos, tab).await?;
+    let dashboard = GithubDashboard {
+        account: account_summary(row),
+        queues: data.queues,
+        queue_pulls: data.queue_pulls,
+    };
+    state.dashboard_cache.set(user_id, tab, dashboard.clone());
+    let snapshot = serde_json::to_value(&dashboard).unwrap_or(serde_json::Value::Null);
+    let _ = github_pat::set_dashboard_snapshot(&state.db, user_id, tab.as_str(), snapshot).await;
+    Ok(dashboard)
+}
+
+/// SWR dashboard load (port of `runDashboard`).
+pub async fn get_dashboard(
+    state: &web::Data<AppState>,
+    user_id: Uuid,
+    tab: GithubQueueKey,
+) -> Result<GithubDashboard, AppError> {
+    if let Some(hit) = state.dashboard_cache.peek(user_id, tab) {
+        if hit.fresh {
+            return Ok(hit.value);
+        }
+    }
+    let Some(row) = github_pat::select_row(&state.db, user_id).await? else {
+        return Ok(GithubDashboard::empty());
+    };
+
+    // Background: bump last_used_at.
+    {
+        let st = state.clone();
+        tokio::spawn(async move {
+            let _ = github_pat::touch_last_used(&st.db, user_id).await;
+        });
+    }
+
+    let stale = state
+        .dashboard_cache
+        .peek(user_id, tab)
+        .map(|h| h.value)
+        .or_else(|| snapshot_for(&row, tab));
+
+    match stale {
+        None => refresh(state, user_id, tab, &row).await,
+        Some(stale) => {
+            // Single-flight background revalidation.
+            if state.dashboard_cache.try_begin_refresh(user_id, tab) {
+                let st = state.clone();
+                tokio::spawn(async move {
+                    let _ = refresh(&st, user_id, tab, &row).await;
+                    st.dashboard_cache.end_refresh(user_id, tab);
+                });
+            }
+            Ok(stale)
+        }
+    }
+}
+
+/// `GET /me/github/queue` (port of `runQueue`).
+pub async fn get_queue(
+    state: &AppState,
+    user_id: Uuid,
+    key: GithubQueueKey,
+) -> Result<wf_github::dashboard::types::GithubPullRequestQueue, AppError> {
+    let pat = super::pat::resolve_pat(state, user_id)
+        .await?
+        .ok_or_else(|| AppError::from(GithubError::Api("No GitHub token connected".into())))?;
+    Ok(fetch_queue_pulls(&pat.token, &pat.login, &pat.selected_repos, key).await?)
+}
+
+/// `GET /me/github/repos` (port of `runListRepos`).
+pub async fn list_repos(state: &AppState, user_id: Uuid) -> Result<RepoSelection, AppError> {
+    let Some(pat) = super::pat::resolve_pat(state, user_id).await? else {
+        return Ok(RepoSelection { available: vec![], selected: vec![] });
+    };
+    let available = list_repositories(&pat.token).await?;
+    Ok(RepoSelection { available, selected: pat.selected_repos })
+}
+
+/// `PUT /me/github/repos` (port of `runSetRepos`): set selection, bust caches,
+/// return the refreshed connection summary.
+pub async fn set_selected_repos(
+    state: &AppState,
+    user_id: Uuid,
+    repos: &[String],
+) -> Result<crate::github::summary::GithubConnectionSummary, AppError> {
+    github_pat::set_selected_repos(&state.db, user_id, repos).await?;
+    state.token_cache.clear(user_id);
+    state.dashboard_cache.clear(user_id);
+    super::pat::status(state, user_id).await
+}

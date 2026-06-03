@@ -4405,6 +4405,7 @@ dependencies = [
  "chrono",
  "dotenvy",
  "sea-orm",
+ "serde_json",
  "sqlx",
  "thiserror",
  "tokio",
