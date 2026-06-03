@@ -18,6 +18,13 @@ use sea_orm::{DatabaseConnection, SqlxPostgresConnector};
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use thiserror::Error;
 
+pub mod entities;
+pub mod repositories;
+
+// Re-export the SeaORM connection type so the api crate need not depend on
+// sea-orm directly just to name it.
+pub use sea_orm::DatabaseConnection as Db;
+
 #[derive(Debug, Error)]
 pub enum DbError {
     #[error("invalid DATABASE_URL: {0}")]

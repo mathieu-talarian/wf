@@ -1,23 +1,26 @@
-//! actix-web bootstrap: config → tracing → AppState → HttpServer.
-//! Phase 1 skeleton (migration plan §16): CORS, request logging, RFC 9457
-//! problem plumbing, and the unauthenticated `/health` + `/hello/:name` routes.
+//! actix-web bootstrap: config → tracing → db → AppState → HttpServer
+//! (migration plan §16). Phase 2 adds the Supabase JWKS verifier, the token
+//! cipher, the DB connection, and `GET /me`.
 
+mod auth;
 mod error;
 mod middleware;
 mod routes;
 mod state;
 
+use std::sync::Arc;
+
 use actix_cors::Cors;
 use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer};
 use tracing_subscriber::EnvFilter;
 use wf_core::problem::ProblemDetails;
-use wf_core::Config;
+use wf_core::{Config, TokenCipher};
 
+use crate::auth::JwksVerifier;
 use crate::middleware::request_log::request_log;
 use crate::state::AppState;
 
 fn init_tracing(config: &Config) {
-    // Prefer RUST_LOG when set; otherwise use the configured LOG_LEVEL.
     let filter = EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| EnvFilter::new(config.log_level.tracing_directive()));
     tracing_subscriber::fmt()
@@ -29,12 +32,8 @@ fn init_tracing(config: &Config) {
 /// Default 404, emitted in the same `application/problem+json` envelope as
 /// handler errors (migration plan §9: framework-level not-found).
 async fn not_found(req: HttpRequest) -> HttpResponse {
-    let instance = req
-        .uri()
-        .path_and_query()
-        .map(|pq| pq.as_str().to_string());
-    let problem = ProblemDetails::new(404, "not-found", "Not Found", "Not Found")
-        .with_instance(instance);
+    let instance = req.uri().path_and_query().map(|pq| pq.as_str().to_string());
+    let problem = ProblemDetails::new(404, "not-found", "Not Found", "Not Found").with_instance(instance);
     HttpResponse::NotFound()
         .content_type("application/problem+json")
         .body(serde_json::to_string(&problem).unwrap_or_else(|_| "{}".to_string()))
@@ -46,21 +45,37 @@ async fn main() -> std::io::Result<()> {
     init_tracing(&config);
 
     // Boot-time guard: the encryption key must decode to exactly 32 bytes
-    // (migration plan §5). Fail fast, mirroring the TS `decodeKey` throw.
-    config
+    // (migration plan §5), mirroring the TS `decodeKey` throw.
+    let key = config
         .encryption_key_bytes()
         .expect("GITHUB_TOKEN_ENCRYPTION_KEY must decode to 32 bytes");
 
+    let db = wf_db::connect(&config.database_url, wf_db::ConnectOptions::default())
+        .await
+        .expect("database connection failed");
+
+    let jwks = Arc::new(JwksVerifier::new(
+        &config.supabase_url,
+        &config.supabase_jwt_audience,
+    ));
+    let cipher = Arc::new(TokenCipher::new(&key));
+
     let port = config.port;
     let origins = config.cors_origins.clone();
-    let state = web::Data::new(AppState::new(config));
 
     tracing::info!(
         target: "server.start",
         port,
-        node_env = ?state.config.node_env,
-        otel_enabled = state.config.otel_exporter_otlp_endpoint.is_some(),
+        node_env = ?config.node_env,
+        otel_enabled = config.otel_exporter_otlp_endpoint.is_some(),
     );
+
+    let state = web::Data::new(AppState {
+        config: Arc::new(config),
+        db,
+        jwks,
+        cipher,
+    });
 
     HttpServer::new(move || {
         let mut cors = Cors::default()

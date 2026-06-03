@@ -6,14 +6,7 @@ license.workspace = true
 
 [dependencies]
 wf-core = { workspace = true }
-sea-orm = { version = "1.1", default-features = false, features = [
-    "sqlx-postgres",
-    "runtime-tokio-rustls",
-    "macros",
-    "with-chrono",
-    "with-json",
-    "with-uuid",
-] }
+sea-orm = { workspace = true }
 # Pinned to the same minor SeaORM depends on, so the PgPool type unifies.
 sqlx = { version = "0.8", default-features = false, features = [
     "postgres",
@@ -21,6 +14,7 @@ sqlx = { version = "0.8", default-features = false, features = [
 ] }
 thiserror = { workspace = true }
 tracing = { workspace = true }
+chrono = { workspace = true }
 
 [dev-dependencies]
 # Phase 0 spike harness (examples/phase0.rs).

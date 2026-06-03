@@ -10,6 +10,7 @@ path = "src/main.rs"
 
 [dependencies]
 wf-core = { workspace = true }
+wf-db = { workspace = true }
 
 actix-web = { workspace = true }
 actix-cors = { workspace = true }
@@ -24,3 +25,9 @@ chrono = { workspace = true }
 
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+
+# Auth: JWKS fetch + JWT verification (migration plan §7).
+reqwest = { workspace = true }
+jsonwebtoken = { workspace = true }
+sea-orm = { workspace = true }
+tokio = { workspace = true }
