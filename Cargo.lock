@@ -4484,6 +4484,8 @@ version = "0.1.0"
 dependencies = [
  "base64",
  "dotenvy",
+ "futures",
+ "percent-encoding",
  "reqwest",
  "serde",
  "serde_json",

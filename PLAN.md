@@ -12,9 +12,10 @@ Working checklist for the remaining migration, derived from `2026-06-03-ts-to-ru
 ## Status snapshot
 - ✅ Phase 0 spikes (DB session pooler, AES-GCM on real row, JWKS ES256)
 - ✅ Phase 1 skeleton · ✅ Phase 2 auth + `/me`
-- ✅ Phase 3 GitHub COMPLETE — 3a client+validate · 3b connection · 3c dashboard+SWR · 3c.3 PR enrichment · 3d.1 activity reads · 3d.2 activity writes · 3d.3 favorites
+- ✅ Phase 3 GitHub COMPLETE — 3a/3b/3c/3c.3/3d.1/3d.2/3d.3
+- ✅ Phase 4 Jira: 4a client+validate · 4b connection · 4c data+mappers (4d actions next)
 - ✅ Dependency upgrade (reqwest 0.13, jsonwebtoken 10, sqlx 0.9, sea-orm 2.0-rc, getrandom 0.4)
-- **Endpoints done: 27 / 48** — `/health`, `/hello/:name`, `/me`, `/me/github` (4 conn), `/me/github/{dashboard,queue,repos}` GET + `repos` PUT, `/me/github/pull` GET + `/me/github/pulls/enrich` POST, `/me/github/{branches,workflows,workflow/inputs,workflow/runs,repo/branches,repo/environments}` GET, `/me/github/{workflow/dispatch,pulls,pull/merge,pull/close}` POST, `/me/github/favorites` GET+PUT. (All GitHub endpoints done; Jira next.)
+- **Endpoints done: 44 / 48** (GitHub 27 + Jira conn 5 + Jira data 12) — `/health`, `/hello/:name`, `/me`, `/me/github` (4 conn), `/me/github/{dashboard,queue,repos}` GET + `repos` PUT, `/me/github/pull` GET + `/me/github/pulls/enrich` POST, `/me/github/{branches,workflows,workflow/inputs,workflow/runs,repo/branches,repo/environments}` GET, `/me/github/{workflow/dispatch,pulls,pull/merge,pull/close}` POST, `/me/github/favorites` GET+PUT. (All GitHub endpoints done; Jira next.)
 
 ---
 
@@ -60,10 +61,12 @@ Working checklist for the remaining migration, derived from `2026-06-03-ts-to-ru
 - **Note:** Jira reuses the GitHub `TokenCipher` key.
 - **Verified:** `cargo run -p wf-db --example jira_row` — entity select against live Supabase succeeds (schema match). Full connect flow needs real creds (deferred; same as 4a).
 
-### 4c — Jira data + mappers
-- **Source:** `jira/issues/{adf,jql,fields,mappers,status,dashboard,issues}.ts`, `routes/data.ts`.
-- **Port the existing `bun:test` suites as Rust unit tests:** `adf.test.ts`, `jql.test.ts`, `fields.test.ts`, `status.test.ts`.
+### 4c — Jira data + mappers  ✅ DONE
+- **Source:** `jira/issues/{adf,jql,fields,mappers,status,dashboard,issues}.ts`, `action-runners.ts` (reads), `routes/data.ts`.
+- **Built:** `wf-jira` — `types.rs` (DTOs + field constants), `issues/{adf,jql,fields,mappers,search,dashboard,reads}.rs`. ADF flatten, JQL builders (injection-safe quoting), metadata-driven field coercion (write-path security boundary), payload mappers, search (`/search/jql` + approximate-count), 5-queue concurrent dashboard with per-queue degradation, lookups (projects/issuetypes/boards/sprint/transitions/users/createmeta/editmeta). `status.rs` gained `classify_queue_failure`. `wf-api/jira/data.rs` (loadConnected → client, decrypt-per-request) + 12 routes. **All 4 bun:test suites ported** (adf/jql/fields/status) → 52 wf-jira unit tests.
 - **Endpoints:** `GET /me/jira/{dashboard,queue,issue,projects,issuetypes,boards,sprint/issues,issue/transitions,users,createmeta,editmeta}`, `POST /me/jira/search`.
+- **Verified:** 52 unit tests (ported suites). Live data path needs real Jira creds (deferred — same as 4a/4b).
+- **Minor parity note:** editmeta field order is by fieldId (BTreeMap) vs Jira's insertion order; createmeta uses an array (order preserved).
 
 ### 4d — Jira actions
 - **Source:** `jira/routes/actions.ts`, `action-runners.ts`.

@@ -3,6 +3,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::issues::jql::JiraQueueKey;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum JiraValidationStatus {
@@ -43,6 +45,29 @@ pub fn validation_status_for_http(status: Option<u16>) -> JiraValidationStatus {
     }
 }
 
+/// Whether a failing dashboard queue should degrade quietly (Agile/sprint
+/// features absent on a non-Software site) or surface as a real error.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum QueueErrorKind {
+    FeatureUnavailable,
+    Error,
+}
+
+const AGILE_ABSENT: [u16; 3] = [400, 403, 404];
+
+/// Port of `classifyQueueFailure`: an Agile-only `active_sprint` queue that fails
+/// with 400/403/404 is treated as "feature unavailable" (non-Software site);
+/// everything else is a real error.
+pub fn classify_queue_failure(key: JiraQueueKey, status: Option<u16>) -> QueueErrorKind {
+    match status {
+        Some(s) if key == JiraQueueKey::ActiveSprint && AGILE_ABSENT.contains(&s) => {
+            QueueErrorKind::FeatureUnavailable
+        }
+        _ => QueueErrorKind::Error,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -54,5 +79,28 @@ mod tests {
         assert_eq!(validation_status_for_http(Some(404)), JiraValidationStatus::Unknown);
         assert_eq!(validation_status_for_http(Some(500)), JiraValidationStatus::Unknown);
         assert_eq!(validation_status_for_http(None), JiraValidationStatus::Unknown);
+    }
+
+    #[test]
+    fn classify_degrades_active_sprint_on_agile_absent() {
+        for s in [400, 403, 404] {
+            assert_eq!(
+                classify_queue_failure(JiraQueueKey::ActiveSprint, Some(s)),
+                QueueErrorKind::FeatureUnavailable
+            );
+        }
+    }
+
+    #[test]
+    fn classify_treats_5xx_active_sprint_as_real_error() {
+        assert_eq!(
+            classify_queue_failure(JiraQueueKey::ActiveSprint, Some(500)),
+            QueueErrorKind::Error
+        );
+    }
+
+    #[test]
+    fn classify_treats_403_on_core_queue_as_real_error() {
+        assert_eq!(classify_queue_failure(JiraQueueKey::Assigned, Some(403)), QueueErrorKind::Error);
     }
 }
