@@ -3,12 +3,15 @@
 //! workflow lookups swallow errors into an `error` entry; the single-repo run
 //! list propagates failures.
 
+use std::collections::HashMap;
+
 use futures::future::join_all;
 use reqwest::Method;
 use serde::Deserialize;
 
 use super::branches_graphql::{to_coord, RepoCoord};
 use super::types::{GithubRepoWorkflows, GithubWorkflowSummary};
+use super::write::write_send;
 use crate::client::{GithubClient, RepoRef};
 use crate::dashboard::types::GithubWorkflowRunSummary;
 use crate::errors::GithubError;
@@ -132,4 +135,21 @@ pub async fn list_workflow_runs(
     }
     let runs: ApiRuns = resp.json().await.map_err(|e| GithubError::Api(e.to_string()))?;
     Ok(runs.workflow_runs.into_iter().map(to_run).collect())
+}
+
+/// Trigger a `workflow_dispatch` (port of `dispatchWorkflow`). 204 on success;
+/// failures pass the status through as a write error.
+pub async fn dispatch_workflow(
+    token: &str,
+    r: &RepoRef,
+    workflow_id: i64,
+    git_ref: &str,
+    inputs: &HashMap<String, String>,
+) -> Result<(), GithubError> {
+    let client = GithubClient::new(token);
+    let payload = serde_json::json!({ "ref": git_ref, "inputs": inputs });
+    let path = format!("/repos/{}/{}/actions/workflows/{workflow_id}/dispatches", r.owner, r.repo);
+    write_send(client.request(Method::POST, &path).json(&payload), "Failed to dispatch the workflow.")
+        .await?;
+    Ok(())
 }

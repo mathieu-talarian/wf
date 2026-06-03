@@ -12,9 +12,9 @@ Working checklist for the remaining migration, derived from `2026-06-03-ts-to-ru
 ## Status snapshot
 - ✅ Phase 0 spikes (DB session pooler, AES-GCM on real row, JWKS ES256)
 - ✅ Phase 1 skeleton · ✅ Phase 2 auth + `/me`
-- ✅ Phase 3a GitHub client + PAT validation · ✅ 3b connection flow · ✅ 3c dashboard (data + routes + SWR) · ✅ 3c.3 PR enrichment · ✅ 3d.1 activity reads
+- ✅ Phase 3a GitHub client + PAT validation · ✅ 3b connection flow · ✅ 3c dashboard (data + routes + SWR) · ✅ 3c.3 PR enrichment · ✅ 3d.1 activity reads · ✅ 3d.2 activity writes
 - ✅ Dependency upgrade (reqwest 0.13, jsonwebtoken 10, sqlx 0.9, sea-orm 2.0-rc, getrandom 0.4)
-- **Endpoints done: 21 / 48** — `/health`, `/hello/:name`, `/me`, `/me/github` (4 conn), `/me/github/{dashboard,queue,repos}` GET + `repos` PUT, `/me/github/pull` GET + `/me/github/pulls/enrich` POST, `/me/github/{branches,workflows,workflow/inputs,workflow/runs,repo/branches,repo/environments}` GET.
+- **Endpoints done: 25 / 48** — `/health`, `/hello/:name`, `/me`, `/me/github` (4 conn), `/me/github/{dashboard,queue,repos}` GET + `repos` PUT, `/me/github/pull` GET + `/me/github/pulls/enrich` POST, `/me/github/{branches,workflows,workflow/inputs,workflow/runs,repo/branches,repo/environments}` GET, `/me/github/{workflow/dispatch,pulls,pull/merge,pull/close}` POST.
 
 ---
 
@@ -32,12 +32,13 @@ Working checklist for the remaining migration, derived from `2026-06-03-ts-to-ru
 - **Endpoints:** `GET /me/github/{branches,workflows,workflow/inputs,workflow/runs,repo/branches,repo/environments}`.
 - **Verified:** `cargo run -p wf-db --example gh_activity` — 7 repos' workflows, inputs parsed (`type: environment/boolean` + defaults), 100 branches, 6 environments, runs (200/parsed).
 
-### 3d.2 — Activity writes  ⏳ NEXT
-- **Source:** `github/pulls.ts`, `activity/runners.ts`, `write-runners`.
-- **Endpoints:** `POST /me/github/workflow/dispatch`, `POST /me/github/pulls` (create), `POST /me/github/pull/merge`, `POST /me/github/pull/close`.
-- **Note:** failures → `GithubError::Write { status, message }` (passthrough 403/404/422), slug `github-write-failed`.
+### 3d.2 — Activity writes  ✅ DONE
+- **Source:** `github/pulls.ts`, `activity/{activity,runners}.ts` (write half).
+- **Built:** `activity/write.rs` (`write_send`/`write_detail`: 403 → permission hint, else upstream `.message`, transport → 502); `activity/pulls.rs` (create/merge/close); `dispatch_workflow` in `workflows.rs`. Write DTOs in `types.rs`. API `activity.rs` write fns + 4 POST routes; dispatch/close → `{ ok: true }`.
+- **Endpoints:** `POST /me/github/{workflow/dispatch,pulls,pull/merge,pull/close}`.
+- **Verified:** `cargo run -p wf-db --example gh_write_probe` (non-destructive) — bogus dispatch + merge both return `Write { status: 404, message: "Not Found" }` (status passthrough). Happy-path writes intentionally not live-exercised (side effects); covered by faithful port + `error.rs` mapping.
 
-### 3d.3 — Favorites
+### 3d.3 — Favorites  ⏳ NEXT
 - **Source:** `github/pat/favorites.ts`, `routes/favorites.ts`.
 - **Build:** `favorite_workflows` jsonb (`HashMap<String, Vec<i64>>`) repo ops.
 - **Endpoints:** `GET /me/github/favorites`, `PUT /me/github/favorites` ({repoFullName, workflowIds}).

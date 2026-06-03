@@ -3,10 +3,13 @@
 //! (cache-first) and fails with "No GitHub token connected" when unconnected,
 //! matching the TS `withConn` guard.
 
+use std::collections::HashMap;
+
 use sea_orm::prelude::Uuid;
 use wf_github::{
     fetch_branch_prompts, fetch_workflow_inputs, fetch_workflows, list_environments,
-    list_repo_branch_names, list_workflow_runs, GithubError, GithubRepoBranches, GithubRepoWorkflows,
+    list_repo_branch_names, list_workflow_runs, GithubCreatePullInput, GithubCreatePullResult,
+    GithubError, GithubMergeMethod, GithubMergePullResult, GithubRepoBranches, GithubRepoWorkflows,
     GithubWorkflowInputs, GithubWorkflowRunSummary, RepoRef,
 };
 
@@ -79,4 +82,51 @@ pub async fn workflow_runs(
 ) -> Result<Vec<GithubWorkflowRunSummary>, AppError> {
     let pat = require_pat(state, user_id).await?;
     Ok(list_workflow_runs(&pat.token, &r, workflow_id, branch).await?)
+}
+
+/// `POST /me/github/workflow/dispatch` (port of `runDispatch`).
+pub async fn dispatch(
+    state: &AppState,
+    user_id: Uuid,
+    r: RepoRef,
+    workflow_id: i64,
+    git_ref: &str,
+    inputs: &HashMap<String, String>,
+) -> Result<(), AppError> {
+    let pat = require_pat(state, user_id).await?;
+    Ok(wf_github::dispatch_workflow(&pat.token, &r, workflow_id, git_ref, inputs).await?)
+}
+
+/// `POST /me/github/pulls` (port of `runCreatePull`).
+pub async fn create_pull(
+    state: &AppState,
+    user_id: Uuid,
+    r: RepoRef,
+    input: &GithubCreatePullInput,
+) -> Result<GithubCreatePullResult, AppError> {
+    let pat = require_pat(state, user_id).await?;
+    Ok(wf_github::create_pull(&pat.token, &r, input).await?)
+}
+
+/// `POST /me/github/pull/merge` (port of `runMergePull`).
+pub async fn merge_pull(
+    state: &AppState,
+    user_id: Uuid,
+    r: RepoRef,
+    pull_number: i64,
+    method: GithubMergeMethod,
+) -> Result<GithubMergePullResult, AppError> {
+    let pat = require_pat(state, user_id).await?;
+    Ok(wf_github::merge_pull(&pat.token, &r, pull_number, method).await?)
+}
+
+/// `POST /me/github/pull/close` (port of `runClosePull`).
+pub async fn close_pull(
+    state: &AppState,
+    user_id: Uuid,
+    r: RepoRef,
+    pull_number: i64,
+) -> Result<(), AppError> {
+    let pat = require_pat(state, user_id).await?;
+    Ok(wf_github::close_pull(&pat.token, &r, pull_number).await?)
 }

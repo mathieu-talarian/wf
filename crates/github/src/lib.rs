@@ -10,10 +10,11 @@ pub mod types;
 pub mod validate;
 
 pub use activity::{
-    fetch_branch_prompts, fetch_workflow_inputs, fetch_workflows, list_environments,
-    list_repo_branch_names, list_workflow_runs, GithubBranchPrompt, GithubRepoBranches,
-    GithubRepoWorkflows, GithubWorkflowInput, GithubWorkflowInputType, GithubWorkflowInputs,
-    GithubWorkflowSummary,
+    close_pull, create_pull, dispatch_workflow, fetch_branch_prompts, fetch_workflow_inputs,
+    fetch_workflows, list_environments, list_repo_branch_names, list_workflow_runs, merge_pull,
+    GithubBranchPrompt, GithubCreatePullInput, GithubCreatePullResult, GithubMergeMethod,
+    GithubMergePullResult, GithubRepoBranches, GithubRepoWorkflows, GithubWorkflowInput,
+    GithubWorkflowInputType, GithubWorkflowInputs, GithubWorkflowSummary,
 };
 pub use client::{parse_repo_ref, GithubClient, RepoRef};
 pub use dashboard::enrich::{enrich_pull_request, enrich_pull_requests};

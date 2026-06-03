@@ -4,7 +4,11 @@
 use actix_web::{web, HttpResponse};
 use sea_orm::prelude::Uuid;
 use serde::Deserialize;
-use wf_github::{GithubPullRef, GithubQueueKey, RepoRef};
+use std::collections::HashMap;
+
+use wf_github::{
+    GithubCreatePullInput, GithubMergeMethod, GithubPullRef, GithubQueueKey, RepoRef,
+};
 
 use crate::auth::AuthUser;
 use crate::error::AppError;
@@ -67,6 +71,43 @@ struct WorkflowRunsQuery {
 
 fn ref_of(owner: &str, repo: &str) -> RepoRef {
     RepoRef { owner: owner.to_string(), repo: repo.to_string() }
+}
+
+#[derive(Deserialize)]
+struct DispatchBody {
+    owner: String,
+    repo: String,
+    #[serde(rename = "workflowId")]
+    workflow_id: i64,
+    #[serde(rename = "ref")]
+    git_ref: String,
+    inputs: HashMap<String, String>,
+}
+
+#[derive(Deserialize)]
+struct CreatePullBody {
+    owner: String,
+    repo: String,
+    base: String,
+    head: String,
+    title: String,
+    #[serde(default)]
+    body: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct MergePullBody {
+    owner: String,
+    repo: String,
+    number: i64,
+    method: GithubMergeMethod,
+}
+
+#[derive(Deserialize)]
+struct ClosePullBody {
+    owner: String,
+    repo: String,
+    number: i64,
 }
 
 fn user_id(user: &AuthUser) -> Result<Uuid, AppError> {
@@ -239,6 +280,67 @@ async fn workflow_runs_route(
     Ok(HttpResponse::Ok().json(r))
 }
 
+/// POST /me/github/workflow/dispatch — trigger a workflow_dispatch.
+async fn dispatch_route(
+    state: web::Data<AppState>,
+    user: AuthUser,
+    body: web::Json<DispatchBody>,
+) -> Result<HttpResponse, AppError> {
+    activity::dispatch(
+        &state,
+        user_id(&user)?,
+        ref_of(&body.owner, &body.repo),
+        body.workflow_id,
+        &body.git_ref,
+        &body.inputs,
+    )
+    .await?;
+    Ok(HttpResponse::Ok().json(serde_json::json!({ "ok": true })))
+}
+
+/// POST /me/github/pulls — create a PR.
+async fn create_pull_route(
+    state: web::Data<AppState>,
+    user: AuthUser,
+    body: web::Json<CreatePullBody>,
+) -> Result<HttpResponse, AppError> {
+    let input = GithubCreatePullInput {
+        base: body.base.clone(),
+        head: body.head.clone(),
+        title: body.title.clone(),
+        body: body.body.clone().unwrap_or_default(),
+    };
+    let r = activity::create_pull(&state, user_id(&user)?, ref_of(&body.owner, &body.repo), &input).await?;
+    Ok(HttpResponse::Ok().json(r))
+}
+
+/// POST /me/github/pull/merge — merge a PR.
+async fn merge_pull_route(
+    state: web::Data<AppState>,
+    user: AuthUser,
+    body: web::Json<MergePullBody>,
+) -> Result<HttpResponse, AppError> {
+    let r = activity::merge_pull(
+        &state,
+        user_id(&user)?,
+        ref_of(&body.owner, &body.repo),
+        body.number,
+        body.method,
+    )
+    .await?;
+    Ok(HttpResponse::Ok().json(r))
+}
+
+/// POST /me/github/pull/close — close a PR.
+async fn close_pull_route(
+    state: web::Data<AppState>,
+    user: AuthUser,
+    body: web::Json<ClosePullBody>,
+) -> Result<HttpResponse, AppError> {
+    activity::close_pull(&state, user_id(&user)?, ref_of(&body.owner, &body.repo), body.number).await?;
+    Ok(HttpResponse::Ok().json(serde_json::json!({ "ok": true })))
+}
+
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.route("/me/github", web::get().to(status))
         .route("/me/github/token", web::post().to(connect))
@@ -255,5 +357,9 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .route("/me/github/workflow/inputs", web::get().to(workflow_inputs_route))
         .route("/me/github/workflow/runs", web::get().to(workflow_runs_route))
         .route("/me/github/repo/branches", web::get().to(repo_branches_route))
-        .route("/me/github/repo/environments", web::get().to(environments_route));
+        .route("/me/github/repo/environments", web::get().to(environments_route))
+        .route("/me/github/workflow/dispatch", web::post().to(dispatch_route))
+        .route("/me/github/pulls", web::post().to(create_pull_route))
+        .route("/me/github/pull/merge", web::post().to(merge_pull_route))
+        .route("/me/github/pull/close", web::post().to(close_pull_route));
 }

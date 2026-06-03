@@ -71,3 +71,46 @@ pub struct GithubWorkflowInputs {
     pub dispatchable: bool,
     pub inputs: Vec<GithubWorkflowInput>,
 }
+
+// --- Write DTOs (port of the write half of `activity/types.ts`) ---
+
+/// Body for creating a PR (port of `GithubCreatePullInputT`).
+#[derive(Debug, Clone, Deserialize)]
+pub struct GithubCreatePullInput {
+    pub base: String,
+    pub head: String,
+    pub title: String,
+    pub body: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GithubCreatePullResult {
+    pub number: i64,
+    pub url: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum GithubMergeMethod {
+    Merge,
+    Squash,
+    Rebase,
+}
+
+impl GithubMergeMethod {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Merge => "merge",
+            Self::Squash => "squash",
+            Self::Rebase => "rebase",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GithubMergePullResult {
+    pub merged: bool,
+    pub message: String,
+}
