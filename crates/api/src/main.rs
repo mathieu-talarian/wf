@@ -16,7 +16,11 @@ use std::sync::Arc;
 
 use actix_cors::Cors;
 use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer};
-use tracing_subscriber::EnvFilter;
+use tracing::Level;
+use tracing_subscriber::filter::filter_fn;
+use tracing_subscriber::fmt;
+use tracing_subscriber::prelude::*;
+use tracing_subscriber::{EnvFilter, Layer};
 use wf_core::problem::ProblemDetails;
 use wf_core::{Config, TokenCipher};
 
@@ -24,20 +28,34 @@ use crate::auth::JwksVerifier;
 use crate::middleware::request_log::request_log;
 use crate::state::AppState;
 
+/// Tracing init with the spec §12 stream split: info/debug/trace → stdout,
+/// warn/error → stderr. `RUST_LOG` still overrides the `LOG_LEVEL` directive.
 fn init_tracing(config: &Config) {
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new(config.log_level.tracing_directive()));
-    tracing_subscriber::fmt()
-        .with_env_filter(filter)
+    let directive = config.log_level.tracing_directive();
+    let make_filter =
+        || EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(directive));
+
+    let stdout_layer = fmt::layer()
         .with_target(true)
-        .init();
+        .with_writer(std::io::stdout)
+        .with_filter(filter_fn(|m| !matches!(*m.level(), Level::WARN | Level::ERROR)))
+        .with_filter(make_filter());
+    let stderr_layer = fmt::layer()
+        .with_target(true)
+        .with_writer(std::io::stderr)
+        .with_filter(filter_fn(|m| matches!(*m.level(), Level::WARN | Level::ERROR)))
+        .with_filter(make_filter());
+
+    tracing_subscriber::registry().with(stdout_layer).with(stderr_layer).init();
 }
 
 /// Default 404, emitted in the same `application/problem+json` envelope as
 /// handler errors (migration plan §9: framework-level not-found).
 async fn not_found(req: HttpRequest) -> HttpResponse {
     let instance = req.uri().path_and_query().map(|pq| pq.as_str().to_string());
-    let problem = ProblemDetails::new(404, "not-found", "Not Found", "Not Found").with_instance(instance);
+    // Parity with Elysia's framework 404: the `detail` is the error message,
+    // which for an unmatched route is the literal "NOT_FOUND".
+    let problem = ProblemDetails::new(404, "not-found", "Not Found", "NOT_FOUND").with_instance(instance);
     HttpResponse::NotFound()
         .content_type("application/problem+json")
         .body(serde_json::to_string(&problem).unwrap_or_else(|_| "{}".to_string()))
