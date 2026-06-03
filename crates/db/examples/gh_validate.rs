@@ -12,6 +12,7 @@ use wf_github::validate_token;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    let _ = dotenvy::dotenv();
     let database_url = std::env::var("DATABASE_URL")?;
     let enc_key_b64 = std::env::var("GITHUB_TOKEN_ENCRYPTION_KEY")?;
 

@@ -19,6 +19,7 @@ use wf_db::{connect, ConnectOptions};
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    let _ = dotenvy::dotenv();
     let database_url = std::env::var("DATABASE_URL").context("DATABASE_URL not set")?;
     let enc_key_b64 =
         std::env::var("GITHUB_TOKEN_ENCRYPTION_KEY").context("GITHUB_TOKEN_ENCRYPTION_KEY not set")?;

@@ -9,6 +9,7 @@ use wf_db::{connect, ConnectOptions};
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    let _ = dotenvy::dotenv();
     let db = connect(&std::env::var("DATABASE_URL")?, ConnectOptions::default()).await?;
     match gh::Entity::find().one(&db).await? {
         None => println!("no rows (entity deserialization not exercised)"),

@@ -42,6 +42,10 @@ async fn not_found(req: HttpRequest) -> HttpResponse {
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
+    // Load `.env` (walks up from cwd) so local runs need no manual sourcing.
+    // Real environment variables already set always take precedence.
+    let _ = dotenvy::dotenv();
+
     let config = Config::load().expect("invalid environment configuration");
     init_tracing(&config);
 

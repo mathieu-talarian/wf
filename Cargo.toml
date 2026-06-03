@@ -48,6 +48,9 @@ base64 = "0.22"
 # Time
 chrono = { version = "0.4", features = ["serde"] }
 
+# .env loading (dev/local convenience)
+dotenvy = "0.15"
+
 # Logging / tracing
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }
