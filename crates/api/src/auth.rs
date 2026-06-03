@@ -158,6 +158,39 @@ fn to_authed_user(c: Claims) -> AuthedUser {
     }
 }
 
+/// Extractor that yields an authenticated user or a 401 problem, replacing the
+/// repeated Effect auth prelude. Any handler taking `AuthUser` gets auth-or-401.
+pub struct AuthUser(pub AuthedUser);
+
+impl FromRequest for AuthUser {
+    type Error = AppError;
+    type Future = Pin<Box<dyn Future<Output = Result<Self, AppError>>>>;
+
+    fn from_request(req: &HttpRequest, _payload: &mut Payload) -> Self::Future {
+        let state = req.app_data::<web::Data<AppState>>().cloned();
+        let header = req
+            .headers()
+            .get(AUTHORIZATION)
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_string);
+        let instance = req.uri().path_and_query().map(|pq| pq.as_str().to_string());
+
+        Box::pin(async move {
+            let state = state.ok_or_else(|| {
+                AppError::internal(anyhow::anyhow!("AppState missing")).at(instance.clone())
+            })?;
+            let token =
+                parse_bearer(header.as_deref()).map_err(|e| AppError::from(e).at(instance.clone()))?;
+            let user = state
+                .jwks
+                .verify(&token)
+                .await
+                .map_err(|e| AppError::from(e).at(instance.clone()))?;
+            Ok(AuthUser(user))
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -247,38 +280,5 @@ YgnYGs3OkCZ5pruhb0+vxfPGqWkkJDuU+SpMGVTfV7fx1SlDThpEAI7Q\n\
         let repl = if first == 'A' { 'B' } else { 'A' };
         token.replace_range(sig_start..sig_start + 1, &repl.to_string());
         assert!(verify_with_jwk(&jwk(), Algorithm::ES256, &token, ISSUER, AUDIENCE).is_err());
-    }
-}
-
-/// Extractor that yields an authenticated user or a 401 problem, replacing the
-/// repeated Effect auth prelude. Any handler taking `AuthUser` gets auth-or-401.
-pub struct AuthUser(pub AuthedUser);
-
-impl FromRequest for AuthUser {
-    type Error = AppError;
-    type Future = Pin<Box<dyn Future<Output = Result<Self, AppError>>>>;
-
-    fn from_request(req: &HttpRequest, _payload: &mut Payload) -> Self::Future {
-        let state = req.app_data::<web::Data<AppState>>().cloned();
-        let header = req
-            .headers()
-            .get(AUTHORIZATION)
-            .and_then(|v| v.to_str().ok())
-            .map(str::to_string);
-        let instance = req.uri().path_and_query().map(|pq| pq.as_str().to_string());
-
-        Box::pin(async move {
-            let state = state.ok_or_else(|| {
-                AppError::internal(anyhow::anyhow!("AppState missing")).at(instance.clone())
-            })?;
-            let token =
-                parse_bearer(header.as_deref()).map_err(|e| AppError::from(e).at(instance.clone()))?;
-            let user = state
-                .jwks
-                .verify(&token)
-                .await
-                .map_err(|e| AppError::from(e).at(instance.clone()))?;
-            Ok(AuthUser(user))
-        })
     }
 }
