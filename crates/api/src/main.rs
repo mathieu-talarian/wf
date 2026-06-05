@@ -11,79 +11,26 @@ mod middleware;
 mod openapi;
 mod routes;
 mod state;
+mod telemetry;
 
 use std::sync::Arc;
 
 use actix_cors::Cors;
 use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer};
-use tracing::Level;
-use tracing_subscriber::filter::filter_fn;
-use tracing_subscriber::fmt;
-use tracing_subscriber::prelude::*;
-use tracing_subscriber::{EnvFilter, Layer};
 use wf_core::problem::ProblemDetails;
 use wf_core::{Config, TokenCipher};
 
 use crate::auth::JwksVerifier;
-use crate::middleware::request_log::request_log;
+use crate::middleware::request_tracing::RequestTracing;
 use crate::state::AppState;
 
-/// Builds an OTLP (http/protobuf) batch tracer when `OTEL_EXPORTER_OTLP_ENDPOINT`
-/// is set (spec §12; mirrors `@logtape/otel`). Returns `None` on misconfig so the
-/// server still starts.
-fn build_otel_tracer(endpoint: &str, service_name: &str) -> Option<opentelemetry_sdk::trace::Tracer> {
-    use opentelemetry::trace::TracerProvider as _;
-    use opentelemetry::KeyValue;
-    use opentelemetry_otlp::WithExportConfig;
-
-    let exporter = opentelemetry_otlp::SpanExporter::builder()
-        .with_http()
-        .with_endpoint(endpoint)
-        .build()
-        .ok()?;
-    let provider = opentelemetry_sdk::trace::TracerProvider::builder()
-        .with_batch_exporter(exporter, opentelemetry_sdk::runtime::Tokio)
-        .with_resource(opentelemetry_sdk::Resource::new(vec![KeyValue::new(
-            "service.name",
-            service_name.to_string(),
-        )]))
-        .build();
-    let tracer = provider.tracer("wf-api");
-    opentelemetry::global::set_tracer_provider(provider);
-    Some(tracer)
-}
-
-/// Tracing init with the spec §12 stream split: info/debug/trace → stdout,
-/// warn/error → stderr. `RUST_LOG` still overrides the `LOG_LEVEL` directive.
-/// When `OTEL_EXPORTER_OTLP_ENDPOINT` is set, also exports spans via OTLP.
-fn init_tracing(config: &Config) {
-    let directive = config.log_level.tracing_directive();
-    let make_filter =
-        || EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(directive));
-
-    let stdout_layer = fmt::layer()
-        .with_target(true)
-        .with_writer(std::io::stdout)
-        .with_filter(filter_fn(|m| !matches!(*m.level(), Level::WARN | Level::ERROR)))
-        .with_filter(make_filter());
-    let stderr_layer = fmt::layer()
-        .with_target(true)
-        .with_writer(std::io::stderr)
-        .with_filter(filter_fn(|m| matches!(*m.level(), Level::WARN | Level::ERROR)))
-        .with_filter(make_filter());
-
-    // `Option<Layer>` is itself a `Layer` (no-op when None).
-    let otel_layer = config
-        .otel_exporter_otlp_endpoint
-        .as_deref()
-        .and_then(|ep| build_otel_tracer(ep, &config.otel_service_name))
-        .map(|tracer| tracing_opentelemetry::layer().with_tracer(tracer));
-
-    tracing_subscriber::registry()
-        .with(stdout_layer)
-        .with(stderr_layer)
-        .with(otel_layer)
-        .init();
+/// Liveness/startup probe for Cloud Run (`service.yaml` points its probes here).
+/// Unauthenticated and does no I/O (no DB), so it stays green independent of
+/// downstream health and never blocks on the connection pool.
+async fn healthz() -> HttpResponse {
+    HttpResponse::Ok()
+        .content_type("text/plain; charset=utf-8")
+        .body("ok")
 }
 
 /// Default 404, emitted in the same `application/problem+json` envelope as
@@ -105,7 +52,7 @@ async fn main() -> std::io::Result<()> {
     let _ = dotenvy::dotenv();
 
     let config = Config::load().expect("invalid environment configuration");
-    init_tracing(&config);
+    let telemetry_guard = telemetry::init(&config).expect("failed to initialise OpenTelemetry");
 
     // Boot-time guard: the encryption key must decode to exactly 32 bytes
     // (migration plan §5), mirroring the TS `decodeKey` throw.
@@ -142,7 +89,7 @@ async fn main() -> std::io::Result<()> {
         dashboard_cache: Arc::new(crate::github::dashboard_cache::DashboardCache::default()),
     });
 
-    HttpServer::new(move || {
+    let server = HttpServer::new(move || {
         let mut cors = Cors::default()
             .supports_credentials()
             .allow_any_method()
@@ -154,11 +101,16 @@ async fn main() -> std::io::Result<()> {
         App::new()
             .app_data(state.clone())
             .wrap(cors)
-            .wrap(actix_web::middleware::from_fn(request_log))
+            .wrap(RequestTracing::new())
+            .route("/healthz", web::get().to(healthz))
             .service(web::scope("/api").configure(routes::configure))
             .default_service(web::route().to(not_found))
     })
     .bind(("0.0.0.0", port))?
-    .run()
-    .await
+    .run();
+
+    let result = server.await;
+    // Flush pending traces/metrics/logs before the process exits.
+    telemetry_guard.shutdown();
+    result
 }

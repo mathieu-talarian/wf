@@ -1,0 +1,11 @@
+.serena
+.git
+target
+bin
+tmp
+.env
+cloudbuild.yaml
+otel-config.yaml
+service.yaml
+deploy
+*.test

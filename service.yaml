@@ -1,0 +1,108 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  annotations:
+    run.googleapis.com/launch-stage: ALPHA
+    # Public (unauthenticated) access via the recommended "disable invoker IAM
+    # check" method. Declaring it in the manifest keeps `gcloud run services
+    # replace` idempotent: once the live service already has this value, redeploys
+    # make no IAM change and therefore never require run.services.setIamPolicy.
+    # (Auth is enforced inside the app by the Supabase JWT extractor, not by IAM.)
+    run.googleapis.com/invoker-iam-disabled: "true"
+  name: __SERVICE_NAME__
+spec:
+  template:
+    metadata:
+      annotations:
+        # [REQUIRED] set the collector as a parent to the app
+        run.googleapis.com/container-dependencies: '{"app":["collector"]}'
+        # Make the collector config + the two app secrets available to the
+        # revision. Each entry is "alias:projects/PROJECT/secrets/SECRET"; the
+        # alias is what secretKeyRef.name / volumes.secret.secretName reference.
+        run.googleapis.com/secrets: "__COLLECTOR_CONFIG_SECRET__:projects/__PROJECT_ID__/secrets/__COLLECTOR_CONFIG_SECRET__,wf-database-url:projects/__PROJECT_ID__/secrets/wf-database-url,wf-github-token-encryption-key:projects/__PROJECT_ID__/secrets/wf-github-token-encryption-key"
+    spec:
+      containers:
+        - image: __APP_IMAGE__
+          name: app
+          ports:
+            - containerPort: 8080
+          env:
+            # Bind to the Cloud Run port (overrides the app default of 3000).
+            - name: PORT
+              value: "8080"
+            - name: NODE_ENV
+              value: production
+            # --- OpenTelemetry: export all signals to the sidecar collector. ---
+            - name: OTEL_SERVICE_NAME
+              value: __SERVICE_NAME__
+            # Base endpoint; the SDK appends /v1/traces, /v1/metrics, /v1/logs.
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://localhost:4318"
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: "http/protobuf"
+            # --- Application config (non-secret; rendered from Cloud Build subs). ---
+            - name: SUPABASE_URL
+              value: "__SUPABASE_URL__"
+            - name: SUPABASE_JWT_AUDIENCE
+              value: "__SUPABASE_JWT_AUDIENCE__"
+            - name: CORS_ORIGINS
+              value: "__CORS_ORIGINS__"
+            - name: WEB_APP_URL
+              value: "__WEB_APP_URL__"
+            # --- Secrets (Secret Manager; populate the values out-of-band). ---
+            # DATABASE_URL must be the Supabase *session* pooler (…pooler…:5432).
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: wf-database-url
+                  key: latest
+            - name: GITHUB_TOKEN_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: wf-github-token-encryption-key
+                  key: latest
+          resources:
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          # Gate traffic on app liveness (uses /healthz: the app can serve even if
+          # telemetry export is degraded, and the probe touches no DB).
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            timeoutSeconds: 3
+            periodSeconds: 5
+            failureThreshold: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            timeoutSeconds: 3
+            periodSeconds: 30
+        - image: "us-docker.pkg.dev/cloud-ops-agents-artifacts/google-cloud-opentelemetry-collector/otelcol-google:0.151.0"
+          args:
+            - --config=/etc/otelcol-google/config.yaml
+          name: collector
+          startupProbe:
+            httpGet:
+              path: /
+              port: 13133
+            timeoutSeconds: 30
+            periodSeconds: 30
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 13133
+            timeoutSeconds: 30
+            periodSeconds: 30
+          volumeMounts:
+            - mountPath: /etc/otelcol-google/
+              name: config
+      volumes:
+        - name: config
+          secret:
+            items:
+              - key: latest
+                path: config.yaml
+            secretName: "__COLLECTOR_CONFIG_SECRET__"

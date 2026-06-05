@@ -39,7 +39,7 @@ sea-orm = { version = "2.0.0-rc.40", default-features = false, features = [
 
 # HTTP client + JWT (auth)
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls", "query"] }
-jsonwebtoken = { version = "10", features = ["rust_crypto"] }
+jsonwebtoken = { version = "10", features = ["aws_lc_rs"] }
 
 # Async combinators (bounded-concurrency enrichment) + URL path encoding
 futures = "0.3"
@@ -54,11 +54,26 @@ url = "2"
 # OpenAPI (Phase 5a): code-first spec generation
 utoipa = { version = "5" }
 
-# OpenTelemetry OTLP trace export (spec §12; enabled when OTEL_EXPORTER_OTLP_ENDPOINT set)
-opentelemetry = "0.27"
-opentelemetry_sdk = { version = "0.27", features = ["rt-tokio"] }
-opentelemetry-otlp = { version = "0.27", default-features = false, features = ["trace", "http-proto", "reqwest-client"] }
-tracing-opentelemetry = "0.28"
+# OpenTelemetry OTLP export of traces + metrics + logs (spec §12), shipped to the
+# OpenTelemetry Collector sidecar on Cloud Run; endpoints read from OTEL_* env.
+# The OTLP exporters use the *blocking* reqwest client (own background threads),
+# so the SDK does not need the `rt-tokio` feature.
+opentelemetry = "0.32"
+opentelemetry_sdk = { version = "0.32", features = [
+    "metrics",
+    "logs",
+    "spec_unstable_metrics_views", # SdkMeterProvider::with_view for histogram buckets
+] }
+opentelemetry-otlp = { version = "0.32", default-features = false, features = [
+    "http-proto",
+    "reqwest-blocking-client",
+    "trace",
+    "metrics",
+    "logs",
+] }
+tracing-opentelemetry = "0.33"
+# Bridge: turns `tracing` log events into OpenTelemetry logs (OTLP).
+opentelemetry-appender-tracing = "0.32"
 
 # Crypto
 aes-gcm = "0.10"

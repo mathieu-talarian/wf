@@ -1,0 +1,10 @@
+.git
+.gcloudignore
+.serena
+deploy/terraform
+target
+bin
+tmp
+.env
+otel-config.yaml
+*.test

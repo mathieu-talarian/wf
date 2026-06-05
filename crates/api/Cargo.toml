@@ -42,4 +42,5 @@ utoipa = { workspace = true, features = ["actix_extras"] }
 opentelemetry = { workspace = true }
 opentelemetry_sdk = { workspace = true }
 opentelemetry-otlp = { workspace = true }
+opentelemetry-appender-tracing = { workspace = true }
 tracing-opentelemetry = { workspace = true }

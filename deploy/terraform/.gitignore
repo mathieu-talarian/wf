@@ -1,0 +1,11 @@
+# Terraform provider plugins (downloaded by `terraform init`).
+.terraform/
+# Local state must never be committed (may contain sensitive values).
+*.tfstate
+*.tfstate.*
+# Real variable values (only the .example is tracked).
+terraform.tfvars
+*.auto.tfvars
+crash.log
+crash.*.log
+# Keep .terraform.lock.hcl tracked (provider version lock).

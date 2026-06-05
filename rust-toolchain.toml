@@ -1,0 +1,6 @@
+# Pin the toolchain so local builds, CI, and the Docker image agree, and so
+# `cargo clippy` uses a clippy-driver built by the same rustc as `cargo build`
+# (mismatched toolchains otherwise produce E0514 "incompatible version of rustc").
+[toolchain]
+channel = "stable"
+components = ["rustfmt", "clippy"]
