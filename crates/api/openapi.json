@@ -2016,10 +2016,13 @@
     }
   },
   "info": {
-    "description": "Rust port of the Workflow backend (GitHub + Jira integrations).",
+    "contact": {
+      "name": "Workflow",
+      "url": "https://github.com/"
+    },
+    "description": "Backend API for **Workflow** — a GitHub + Jira developer dashboard. This is the Rust (actix-web) port of the original TypeScript service and preserves the JSON contract endpoint-for-endpoint.\n\n## Authentication\nEvery `/me/**` route requires a Supabase-issued JWT in the `Authorization: Bearer <token>` header (the `bearer` security scheme). The public `/health` and `/hello/{name}` routes are unauthenticated.\n\n## Integrations\n- **GitHub** — connect a personal access token, then load the PR dashboard (stale-while-revalidate), enrich pull requests, browse branches / workflows / environments, and run write actions: dispatch a workflow, create / merge / close a PR, and manage repo + workflow favorites.\n- **Jira** — connect Cloud credentials (site URL + email + API token), then load the multi-queue dashboard, page queues, fetch issue detail, search by JQL, and run write actions: transition, comment, assign, log work, and create / edit issues.\n\n## Conventions\nResponse bodies are camelCase JSON with ISO-8601 millisecond UTC timestamps. Errors are returned as RFC 9457 `application/problem+json` carrying a stable `slug`, `title`, `detail`, and — where relevant — a `reason`.",
     "license": {
-      "identifier": "UNLICENSED",
-      "name": "UNLICENSED"
+      "name": "Proprietary"
     },
     "title": "Workflow API",
     "version": "0.1.0"
@@ -3735,6 +3738,12 @@
       }
     }
   },
+  "servers": [
+    {
+      "description": "Same-origin (the web app proxies /api to this server)",
+      "url": "/"
+    }
+  ],
   "tags": [
     {
       "description": "Liveness and info",
