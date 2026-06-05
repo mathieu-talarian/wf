@@ -39,6 +39,7 @@ impl GithubQueueKey {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct GithubDashboardActor {
     pub login: String,
     pub avatar_url: String,

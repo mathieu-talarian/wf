@@ -416,7 +416,7 @@
       },
       "GithubDashboardActor": {
         "properties": {
-          "avatar_url": {
+          "avatarUrl": {
             "type": "string"
           },
           "login": {
@@ -428,7 +428,7 @@
         },
         "required": [
           "login",
-          "avatar_url",
+          "avatarUrl",
           "url"
         ],
         "type": "object"
