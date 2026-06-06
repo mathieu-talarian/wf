@@ -94,7 +94,19 @@ pub async fn fetch_branch_prompts(
     repos: &[String],
 ) -> Vec<GithubRepoBranches> {
     let coords: Vec<RepoCoord> = repos.iter().filter_map(|r| to_coord(r)).collect();
+    // DIAGNOSTIC (temporary): record the inputs that drive the whole sweep.
+    tracing::info!(
+        target: "branch_prompts",
+        login,
+        selected_repos = repos.len(),
+        valid_coords = coords.len(),
+        "fetch_branch_prompts: inputs"
+    );
     if coords.is_empty() {
+        tracing::warn!(
+            target: "branch_prompts",
+            "no valid repo coordinates -> returning empty (is any repo selected?)"
+        );
         return vec![];
     }
     let client = GithubClient::new(token);

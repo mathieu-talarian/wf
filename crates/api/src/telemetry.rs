@@ -1,18 +1,19 @@
 //! OpenTelemetry wiring (spec §12).
 //!
-//! We export over **OTLP / HTTP / protobuf** to the OpenTelemetry Collector that
-//! runs as a sidecar in the Cloud Run service (see `service.yaml`). The collector
-//! listens on `localhost:4318` and fans telemetry out to Google Cloud:
+//! **Local dev** (`OTEL_EXPORTER_OTLP_ENDPOINT` unset): we install *only* the
+//! pretty stdout layer — no OTLP exporters, no background batchers, nothing
+//! shipped off-box. Spans and events render human-readably to the console.
+//!
+//! **Deployed** (Cloud Run): `service.yaml` sets `OTEL_EXPORTER_OTLP_ENDPOINT`
+//! (and the other `OTEL_*` vars), which switches on the full **OTLP / HTTP /
+//! protobuf** pipeline to the OpenTelemetry Collector sidecar on `localhost:4318`,
+//! which fans telemetry out to Google Cloud:
 //!   * traces  -> Telemetry API (visible in Cloud Trace)
 //!   * metrics -> Google Managed Service for Prometheus (visible in Cloud Monitoring)
 //!   * logs    -> Cloud Logging
 //!
-//! Endpoints/protocol are read from the standard `OTEL_*` environment variables
-//! that `service.yaml` sets, so this code stays deployment-agnostic. The base
-//! endpoint can also be pinned via `config.otel_exporter_otlp_endpoint`
-//! (`OTEL_EXPORTER_OTLP_ENDPOINT`). When unset (e.g. local runs without a
-//! collector) the SDK defaults to `http://localhost:4318` and exports simply fail
-//! quietly — fine for a local smoke test; the pretty stdout layer still logs.
+//! Setting `OTEL_EXPORTER_OTLP_ENDPOINT` locally opts a dev into the export path
+//! too; it's the single switch that distinguishes the two modes.
 
 use opentelemetry::trace::TracerProvider as _;
 use opentelemetry::KeyValue;
@@ -34,23 +35,32 @@ pub(crate) const INSTRUMENTATION_SCOPE: &str = "wf-api";
 /// Holds the provider handles so we can flush them on shutdown. OTLP exporters
 /// batch in the background; dropping/forgetting them can lose the final spans,
 /// metrics, and logs, so we explicitly `shutdown()` before the process exits.
+///
+/// All three are `None` on the local pretty-print-only path (no exporters built),
+/// where `shutdown()` is a no-op.
 pub struct TelemetryGuard {
-    tracer_provider: SdkTracerProvider,
-    meter_provider: SdkMeterProvider,
-    logger_provider: SdkLoggerProvider,
+    tracer_provider: Option<SdkTracerProvider>,
+    meter_provider: Option<SdkMeterProvider>,
+    logger_provider: Option<SdkLoggerProvider>,
 }
 
 impl TelemetryGuard {
     /// Flush and stop the exporters. Safe to call exactly once on shutdown.
     pub fn shutdown(self) {
-        if let Err(err) = self.tracer_provider.shutdown() {
-            eprintln!("error shutting down tracer provider: {err}");
+        if let Some(provider) = self.tracer_provider {
+            if let Err(err) = provider.shutdown() {
+                eprintln!("error shutting down tracer provider: {err}");
+            }
         }
-        if let Err(err) = self.meter_provider.shutdown() {
-            eprintln!("error shutting down meter provider: {err}");
+        if let Some(provider) = self.meter_provider {
+            if let Err(err) = provider.shutdown() {
+                eprintln!("error shutting down meter provider: {err}");
+            }
         }
-        if let Err(err) = self.logger_provider.shutdown() {
-            eprintln!("error shutting down logger provider: {err}");
+        if let Some(provider) = self.logger_provider {
+            if let Err(err) = provider.shutdown() {
+                eprintln!("error shutting down logger provider: {err}");
+            }
         }
     }
 }
@@ -103,8 +113,28 @@ fn latency_histogram_buckets(instrument: &Instrument) -> Option<Stream> {
 /// Returns a [`TelemetryGuard`] whose `shutdown()` must be called before exit to
 /// flush pending telemetry.
 pub fn init(config: &Config) -> Result<TelemetryGuard, Box<dyn std::error::Error + Send + Sync>> {
+    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+
+    // Local dev: no OTLP endpoint configured -> pretty stdout only. We build no
+    // exporters and no OTel providers, so there are no background batchers and
+    // nothing is shipped off-box. `opentelemetry::global` keeps its default no-op
+    // meter/tracer/propagator, which the HTTP middleware tolerates.
+    let Some(endpoint) = config.otel_exporter_otlp_endpoint.as_deref() else {
+        tracing_subscriber::registry()
+            .with(env_filter)
+            .with(fmt::layer().pretty())
+            .init();
+        return Ok(TelemetryGuard {
+            tracer_provider: None,
+            meter_provider: None,
+            logger_provider: None,
+        });
+    };
+
+    // Export path: an endpoint is configured (Cloud Run sets it via `service.yaml`;
+    // locally it's an explicit opt-in). Wire the full traces+metrics+logs pipeline
+    // over OTLP / HTTP / protobuf.
     let resource = resource(config);
-    let endpoint = config.otel_exporter_otlp_endpoint.as_deref();
 
     // Install the W3C trace-context propagator so incoming `traceparent` headers
     // (which Cloud Run injects) can be extracted and continued. Without this,
@@ -112,32 +142,22 @@ pub fn init(config: &Config) -> Result<TelemetryGuard, Box<dyn std::error::Error
     opentelemetry::global::set_text_map_propagator(TraceContextPropagator::new());
 
     // --- Traces ------------------------------------------------------------
-    let span_exporter = {
-        let builder = opentelemetry_otlp::SpanExporter::builder()
-            .with_http()
-            .with_protocol(Protocol::HttpBinary);
-        match endpoint {
-            Some(ep) => builder.with_endpoint(ep),
-            None => builder,
-        }
-        .build()?
-    };
+    let span_exporter = opentelemetry_otlp::SpanExporter::builder()
+        .with_http()
+        .with_protocol(Protocol::HttpBinary)
+        .with_endpoint(endpoint)
+        .build()?;
     let tracer_provider = SdkTracerProvider::builder()
         .with_resource(resource.clone())
         .with_batch_exporter(span_exporter)
         .build();
 
     // --- Metrics -----------------------------------------------------------
-    let metric_exporter = {
-        let builder = opentelemetry_otlp::MetricExporter::builder()
-            .with_http()
-            .with_protocol(Protocol::HttpBinary);
-        match endpoint {
-            Some(ep) => builder.with_endpoint(ep),
-            None => builder,
-        }
-        .build()?
-    };
+    let metric_exporter = opentelemetry_otlp::MetricExporter::builder()
+        .with_http()
+        .with_protocol(Protocol::HttpBinary)
+        .with_endpoint(endpoint)
+        .build()?;
     let meter_provider = SdkMeterProvider::builder()
         .with_resource(resource.clone())
         .with_periodic_exporter(metric_exporter)
@@ -148,28 +168,23 @@ pub fn init(config: &Config) -> Result<TelemetryGuard, Box<dyn std::error::Error
     opentelemetry::global::set_meter_provider(meter_provider.clone());
 
     // --- Logs --------------------------------------------------------------
-    let log_exporter = {
-        let builder = opentelemetry_otlp::LogExporter::builder()
-            .with_http()
-            .with_protocol(Protocol::HttpBinary);
-        match endpoint {
-            Some(ep) => builder.with_endpoint(ep),
-            None => builder,
-        }
-        .build()?
-    };
+    let log_exporter = opentelemetry_otlp::LogExporter::builder()
+        .with_http()
+        .with_protocol(Protocol::HttpBinary)
+        .with_endpoint(endpoint)
+        .build()?;
     let logger_provider = SdkLoggerProvider::builder()
         .with_resource(resource)
         .with_batch_exporter(log_exporter)
         .build();
 
     // --- tracing subscriber ------------------------------------------------
-    // Layer stack:
+    // Layer stack (export path):
     //   * EnvFilter   - global level filter; respects RUST_LOG (defaults to info).
-    //   * fmt(.pretty) - human-readable logs to stdout, LOCAL ONLY. On Cloud Run
-    //                   (detected via K_SERVICE) we omit it: logs already reach
-    //                   Cloud Logging via the OTLP logs pipeline, and keeping
-    //                   stdout too would double every log line.
+    //   * fmt(.pretty) - human-readable logs to stdout, omitted on Cloud Run
+    //                   (detected via K_SERVICE): logs already reach Cloud Logging
+    //                   via the OTLP logs pipeline, and keeping stdout too would
+    //                   double every log line.
     //   * OpenTelemetry (spans) - converts `tracing` spans into OTel spans.
     //   * OpenTelemetry (logs)  - converts `tracing` events into OTel logs, with a
     //                             per-layer filter to break the export feedback loop.
@@ -180,10 +195,8 @@ pub fn init(config: &Config) -> Result<TelemetryGuard, Box<dyn std::error::Error
         .with_filter(filter::filter_fn(|meta| !is_self_telemetry(meta.target())));
 
     let on_cloud_run = std::env::var("K_SERVICE").is_ok();
-    // Pretty, human-readable stdout for local dev only.
+    // Pretty, human-readable stdout unless we're on Cloud Run (see above).
     let stdout_layer = (!on_cloud_run).then(|| fmt::layer().pretty());
-
-    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
 
     tracing_subscriber::registry()
         .with(env_filter)
@@ -197,8 +210,8 @@ pub fn init(config: &Config) -> Result<TelemetryGuard, Box<dyn std::error::Error
     opentelemetry::global::set_tracer_provider(tracer_provider.clone());
 
     Ok(TelemetryGuard {
-        tracer_provider,
-        meter_provider,
-        logger_provider,
+        tracer_provider: Some(tracer_provider),
+        meter_provider: Some(meter_provider),
+        logger_provider: Some(logger_provider),
     })
 }

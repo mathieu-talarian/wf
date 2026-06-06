@@ -139,30 +139,36 @@ fn commit_login(commit: &GqlCommit) -> Option<&str> {
         .map(|u| u.login.as_str())
 }
 
-fn qualifies(node: &GqlRefNode, ctx: &FilterCtx) -> bool {
+/// Returns `None` when the branch qualifies as a PR prompt, otherwise
+/// `Some(reason)` naming the gate that rejected it. `select_branches` logs the
+/// reason per branch (DIAGNOSTIC) so we can see why the list comes back empty.
+fn reject_reason(node: &GqlRefNode, ctx: &FilterCtx) -> Option<&'static str> {
     let Some(commit) = node.target.as_ref() else {
-        return false;
+        return Some("no commit target");
     };
     let (Some(committed_date), Some(oid)) = (commit.committed_date.as_deref(), commit.oid.as_deref())
     else {
-        return false;
+        return Some("missing committedDate/oid");
     };
     if committed_date.is_empty() {
-        return false;
+        return Some("empty committedDate");
     }
     if node.name == ctx.default_branch {
-        return false;
+        return Some("is default branch");
     }
     if node.associated_pull_requests.total_count > 0 {
-        return false;
+        return Some("has open PR");
     }
     if ctx.default_oid == Some(oid) {
-        return false;
+        return Some("head == default-branch head (no new commits)");
     }
     if commit_login(commit) != Some(ctx.login) {
-        return false;
+        return Some("commit author/committer login != user login");
     }
-    parse_iso_millis(committed_date).map(|ms| ms >= ctx.cutoff_ms).unwrap_or(false)
+    if !parse_iso_millis(committed_date).map(|ms| ms >= ctx.cutoff_ms).unwrap_or(false) {
+        return Some("commit older than 30-day cutoff (or unparseable date)");
+    }
+    None
 }
 
 /// `Date.parse` equivalent for the ISO8601 timestamps GitHub returns.
@@ -192,15 +198,51 @@ pub fn select_branches(repo: &GqlBranchRepo, login: &str, cutoff_ms: i64) -> Vec
         login,
         cutoff_ms,
     };
-    repo.refs
-        .as_ref()
-        .map(|r| r.nodes.as_slice())
-        .unwrap_or(&[])
-        .iter()
-        .flatten()
-        .filter(|node| qualifies(node, &ctx))
-        .map(|node| to_prompt(node, &repo.url, default_branch))
-        .collect()
+    let nodes = repo.refs.as_ref().map(|r| r.nodes.as_slice()).unwrap_or(&[]);
+
+    // DIAGNOSTIC (temporary): trace why the branch-prompt list comes back empty.
+    tracing::info!(
+        target: "branch_prompts",
+        repo = repo.name_with_owner(),
+        default_branch,
+        has_default_oid = ctx.default_oid.is_some(),
+        login,
+        cutoff_ms,
+        ref_count = nodes.iter().flatten().count(),
+        "select_branches: scanning repo"
+    );
+
+    let mut out = Vec::new();
+    for node in nodes.iter().flatten() {
+        match reject_reason(node, &ctx) {
+            None => {
+                tracing::info!(
+                    target: "branch_prompts",
+                    repo = repo.name_with_owner(),
+                    branch = %node.name,
+                    "QUALIFIES"
+                );
+                out.push(to_prompt(node, &repo.url, default_branch));
+            }
+            Some(reason) => {
+                tracing::info!(
+                    target: "branch_prompts",
+                    repo = repo.name_with_owner(),
+                    branch = %node.name,
+                    author_login = node.target.as_ref().and_then(commit_login).unwrap_or("<null/none>"),
+                    committed_date = node
+                        .target
+                        .as_ref()
+                        .and_then(|c| c.committed_date.as_deref())
+                        .unwrap_or("<none>"),
+                    open_prs = node.associated_pull_requests.total_count,
+                    reason,
+                    "rejected"
+                );
+            }
+        }
+    }
+    out
 }
 
 #[cfg(test)]
