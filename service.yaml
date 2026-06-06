@@ -35,11 +35,11 @@ spec:
             # --- OpenTelemetry: export all signals to the sidecar collector. ---
             - name: OTEL_SERVICE_NAME
               value: __SERVICE_NAME__
-            # Base endpoint; the SDK appends /v1/traces, /v1/metrics, /v1/logs.
+            # gRPC OTLP endpoint; all signals multiplex over this one port (no path).
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: "http://localhost:4318"
+              value: "http://localhost:4317"
             - name: OTEL_EXPORTER_OTLP_PROTOCOL
-              value: "http/protobuf"
+              value: "grpc"
             # --- Application config (non-secret; rendered from Cloud Build subs). ---
             - name: SUPABASE_URL
               value: "__SUPABASE_URL__"

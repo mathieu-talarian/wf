@@ -1,9 +1,10 @@
 # Deploying `wf-api` to Cloud Run
 
 `wf-api` runs on Cloud Run as a **two-container service**: the app plus an
-**OpenTelemetry Collector sidecar** (`localhost:4318`) that fans traces, metrics,
-and logs out to Cloud Trace, Cloud Monitoring (Managed Prometheus), and Cloud
-Logging. Infrastructure is Terraform; the build+deploy is Cloud Build.
+**OpenTelemetry Collector sidecar** (gRPC OTLP on `localhost:4317`) that fans
+traces, metrics, and logs out to Cloud Trace, Cloud Monitoring (Managed
+Prometheus), and Cloud Logging. Infrastructure is Terraform; the build+deploy is
+Cloud Build.
 
 Target project: `workflow-497713` / region `europe-west1` (override via vars/subs).
 All cloud resources are **wf-named and isolated** so they never collide with the
@@ -75,8 +76,7 @@ terraform -chdir=deploy/terraform apply -var enable_alerts=true
 
 ## Local development
 
-No collector required. `cargo run -p wf-api` (with `.env`) starts the server; OTLP
-exports simply fail quietly when nothing listens on `localhost:4318`, and logs are
-**pretty-printed to stdout** (the stdout layer is active whenever `K_SERVICE` is
-unset). To see telemetry locally, run a collector on `:4318` and set
-`OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318`.
+No collector required. `cargo run -p wf-api` (with `.env`) starts the server; with
+no `OTEL_EXPORTER_OTLP_ENDPOINT` set, **no OTLP exporters are built** and logs are
+**pretty-printed to stdout**. To see telemetry locally, run a collector with a gRPC
+OTLP receiver on `:4317` and set `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317`.

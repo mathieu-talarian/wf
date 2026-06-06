@@ -7,6 +7,12 @@ version = "0.1.0"
 edition = "2021"
 license = "UNLICENSED"
 
+# Enable the (allow-by-default, pedantic) `too_many_lines` lint so the
+# `too-many-lines-threshold` in clippy.toml actually takes effect. Member crates
+# opt in via `[lints] workspace = true`.
+[workspace.lints.clippy]
+too_many_lines = "warn"
+
 [workspace.dependencies]
 # Internal crates
 wf-core = { path = "crates/core" }
@@ -56,8 +62,9 @@ utoipa = { version = "5" }
 
 # OpenTelemetry OTLP export of traces + metrics + logs (spec §12), shipped to the
 # OpenTelemetry Collector sidecar on Cloud Run; endpoints read from OTEL_* env.
-# The OTLP exporters use the *blocking* reqwest client (own background threads),
-# so the SDK does not need the `rt-tokio` feature.
+# The OTLP exporters use gRPC (tonic). tonic needs a Tokio runtime, which the
+# `#[actix_web::main]` entrypoint already provides; the default batch processor
+# runs on its own background thread, so the SDK still needs no `rt-tokio` feature.
 opentelemetry = "0.32"
 opentelemetry_sdk = { version = "0.32", features = [
     "metrics",
@@ -65,8 +72,7 @@ opentelemetry_sdk = { version = "0.32", features = [
     "spec_unstable_metrics_views", # SdkMeterProvider::with_view for histogram buckets
 ] }
 opentelemetry-otlp = { version = "0.32", default-features = false, features = [
-    "http-proto",
-    "reqwest-blocking-client",
+    "grpc-tonic",
     "trace",
     "metrics",
     "logs",

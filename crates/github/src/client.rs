@@ -67,37 +67,49 @@ impl GithubClient {
         variables: serde_json::Value,
     ) -> Result<serde_json::Value, crate::errors::GithubError> {
         let body = serde_json::json!({ "query": query, "variables": variables });
+        let mut payload = self.post_graphql(&body).await?;
+        if let Some(errors) = graphql_errors(&payload) {
+            return Err(crate::errors::GithubError::Api(format!(
+                "graphql errors: {errors}"
+            )));
+        }
+        Ok(payload["data"].take())
+    }
+
+    /// POSTs a GraphQL body and returns the parsed JSON payload, mapping a
+    /// non-2xx response or transport/parse failure to `GithubError::Api`.
+    async fn post_graphql(
+        &self,
+        body: &serde_json::Value,
+    ) -> Result<serde_json::Value, crate::errors::GithubError> {
         let resp = self
             .http
             .post("https://api.github.com/graphql")
             .header(AUTHORIZATION, format!("Bearer {}", self.token))
             .header(USER_AGENT, USER_AGENT_VALUE)
             .header(ACCEPT, "application/vnd.github+json")
-            .json(&body)
+            .json(body)
             .send()
             .await
             .map_err(|e| crate::errors::GithubError::Api(e.to_string()))?;
-
         if !resp.status().is_success() {
             return Err(crate::errors::GithubError::Api(format!(
                 "graphql HTTP {}",
                 resp.status().as_u16()
             )));
         }
-        let mut payload: serde_json::Value = resp
-            .json()
+        resp.json()
             .await
-            .map_err(|e| crate::errors::GithubError::Api(e.to_string()))?;
-
-        if let Some(errors) = payload.get("errors") {
-            if !errors.is_null() && errors.as_array().map(|a| !a.is_empty()).unwrap_or(true) {
-                return Err(crate::errors::GithubError::Api(format!(
-                    "graphql errors: {errors}"
-                )));
-            }
-        }
-        Ok(payload["data"].take())
+            .map_err(|e| crate::errors::GithubError::Api(e.to_string()))
     }
+}
+
+/// Returns the GraphQL `errors` array when present and non-empty (a null or
+/// empty `errors` field is treated as success, matching `octokit.graphql`).
+fn graphql_errors(payload: &serde_json::Value) -> Option<&serde_json::Value> {
+    payload
+        .get("errors")
+        .filter(|errors| !errors.is_null() && errors.as_array().map(|a| !a.is_empty()).unwrap_or(true))
 }
 
 /// Maps a GitHub error status to a validation status (port of `statusFor`):

@@ -37,9 +37,18 @@ pub async fn select_row(
 /// here) — matches `account.ts#upsert`/`buildUpsertRow`.
 pub async fn upsert_pat(db: &DatabaseConnection, input: UpsertPatInput) -> Result<(), DbErr> {
     let now: DateTimeWithTimeZone = chrono::Utc::now().into();
-    let scope = input.scopes.as_ref().map(|s| s.join(","));
+    gh::Entity::insert(upsert_model(input, now))
+        .on_conflict(upsert_on_conflict())
+        .exec(db)
+        .await?;
+    Ok(())
+}
 
-    let model = gh::ActiveModel {
+/// Builds the `ActiveModel` for [`upsert_pat`]. Selection/favorites/snapshot are
+/// left `NotSet` so they survive a re-connect.
+fn upsert_model(input: UpsertPatInput, now: DateTimeWithTimeZone) -> gh::ActiveModel {
+    let scope = input.scopes.as_ref().map(|s| s.join(","));
+    gh::ActiveModel {
         user_id: Set(input.user_id),
         github_user_id: Set(input.github_user_id),
         github_login: Set(input.github_login),
@@ -61,32 +70,30 @@ pub async fn upsert_pat(db: &DatabaseConnection, input: UpsertPatInput) -> Resul
         selected_repos: NotSet,
         favorite_workflows: NotSet,
         dashboard_snapshot: NotSet,
-    };
+    }
+}
 
-    gh::Entity::insert(model)
-        .on_conflict(
-            OnConflict::column(gh::Column::UserId)
-                .update_columns([
-                    gh::Column::GithubUserId,
-                    gh::Column::GithubLogin,
-                    gh::Column::TokenKind,
-                    gh::Column::AccessTokenCiphertext,
-                    gh::Column::AccessTokenIv,
-                    gh::Column::AccessTokenAuthTag,
-                    gh::Column::Scope,
-                    gh::Column::Permissions,
-                    gh::Column::LastFour,
-                    gh::Column::ExpiresAt,
-                    gh::Column::LastValidatedAt,
-                    gh::Column::ValidationStatus,
-                    gh::Column::ValidationError,
-                    gh::Column::UpdatedAt,
-                ])
-                .to_owned(),
-        )
-        .exec(db)
-        .await?;
-    Ok(())
+/// The `ON CONFLICT (user_id) DO UPDATE` clause for [`upsert_pat`]: refreshes the
+/// token/validation columns but never the preserved jsonb/timestamp columns.
+fn upsert_on_conflict() -> OnConflict {
+    OnConflict::column(gh::Column::UserId)
+        .update_columns([
+            gh::Column::GithubUserId,
+            gh::Column::GithubLogin,
+            gh::Column::TokenKind,
+            gh::Column::AccessTokenCiphertext,
+            gh::Column::AccessTokenIv,
+            gh::Column::AccessTokenAuthTag,
+            gh::Column::Scope,
+            gh::Column::Permissions,
+            gh::Column::LastFour,
+            gh::Column::ExpiresAt,
+            gh::Column::LastValidatedAt,
+            gh::Column::ValidationStatus,
+            gh::Column::ValidationError,
+            gh::Column::UpdatedAt,
+        ])
+        .to_owned()
 }
 
 /// Persists a validation outcome (re-validation failure path).

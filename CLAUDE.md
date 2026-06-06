@@ -30,7 +30,7 @@ Rust port of the TypeScript backend. Faithful port; TS source-of-truth (read-onl
 - `jsonwebtoken` → `features=["rust_crypto"]` (else runtime "CryptoProvider" panic).
 - `reqwest` → `query` feature for `RequestBuilder::query`; TLS feature is `rustls`.
 - `sqlx` → `runtime-tokio` + `tls-rustls-ring`. `getrandom` → `fill()` (not `getrandom()`).
-- OpenTelemetry is 0.32: use `SdkTracerProvider` / `Resource::builder()` / `with_batch_exporter(exporter)` (no runtime arg). `opentelemetry-otlp` uses the **blocking** exporter (`reqwest-blocking-client`, no `rt-tokio` SDK feature).
+- OpenTelemetry is 0.32: use `SdkTracerProvider` / `Resource::builder()` / `with_batch_exporter(exporter)` (no runtime arg). `opentelemetry-otlp` exports over **gRPC** (`grpc-tonic`) to the collector on `:4317` (`.with_tonic()`, base endpoint, no `/v1/*` path). tonic needs a Tokio runtime — the `#[actix_web::main]` entrypoint provides it — but the default batch processor still needs no `rt-tokio` SDK feature.
 
 ## Deployment (Cloud Run)
 - Two-container service (app + OTel Collector sidecar). Files: `Dockerfile`, `cloudbuild.yaml`, `service.yaml`, `otel-config.yaml`, `deploy/terraform/`. Full guide: `DEPLOYMENT.md`. Patterns ported from the read-only reference repo `../otlp`.

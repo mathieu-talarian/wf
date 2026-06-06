@@ -154,6 +154,22 @@ fn map_named(raw: Option<&RawNamed>) -> Option<JiraNamedIcon> {
     })
 }
 
+/// Maps the `status` field to a [`JiraStatus`], defaulting name to `Unknown` and
+/// category to `undefined` (port of `mapStatus`).
+fn map_status(f: Option<&RawFields>) -> JiraStatus {
+    JiraStatus {
+        name: f
+            .and_then(|f| f.status.as_ref())
+            .and_then(|s| s.name.clone())
+            .unwrap_or_else(|| "Unknown".to_string()),
+        category: f
+            .and_then(|f| f.status.as_ref())
+            .and_then(|s| s.status_category.as_ref())
+            .and_then(|c| c.key.clone())
+            .unwrap_or_else(|| "undefined".to_string()),
+    }
+}
+
 pub fn map_issue_summary(site_url: &str, raw: &RawIssue) -> JiraIssueSummary {
     let f = raw.fields.as_ref();
     let key = raw.key.clone().unwrap_or_default();
@@ -163,17 +179,7 @@ pub fn map_issue_summary(site_url: &str, raw: &RawIssue) -> JiraIssueSummary {
         .unwrap_or_else(|| key.split('-').next().unwrap_or("").to_string());
     JiraIssueSummary {
         summary: f.and_then(|f| f.summary.clone()).unwrap_or_default(),
-        status: JiraStatus {
-            name: f
-                .and_then(|f| f.status.as_ref())
-                .and_then(|s| s.name.clone())
-                .unwrap_or_else(|| "Unknown".to_string()),
-            category: f
-                .and_then(|f| f.status.as_ref())
-                .and_then(|s| s.status_category.as_ref())
-                .and_then(|c| c.key.clone())
-                .unwrap_or_else(|| "undefined".to_string()),
-        },
+        status: map_status(f),
         issue_type: map_named(f.and_then(|f| f.issuetype.as_ref()))
             .unwrap_or(JiraNamedIcon { name: String::new(), icon_url: None }),
         priority: map_named(f.and_then(|f| f.priority.as_ref())),

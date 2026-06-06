@@ -264,6 +264,26 @@ struct ApiOwnedRepo {
     archived: bool,
 }
 
+/// Fetches one page of `GET /user/repos` (100/page, sorted by pushed, across
+/// owned/collaborator/org-member affiliations).
+async fn fetch_repos_page(client: &GithubClient, page: &str) -> Result<Vec<ApiOwnedRepo>, GithubError> {
+    let resp = client
+        .request(Method::GET, "/user/repos")
+        .query(&[
+            ("per_page", "100"),
+            ("sort", "pushed"),
+            ("page", page),
+            ("affiliation", "owner,collaborator,organization_member"),
+        ])
+        .send()
+        .await
+        .map_err(|e| GithubError::Api(e.to_string()))?;
+    if !resp.status().is_success() {
+        return Err(GithubError::Api(format!("repos HTTP {}", resp.status().as_u16())));
+    }
+    resp.json().await.map_err(|e| GithubError::Api(e.to_string()))
+}
+
 /// Repos the user can select (port of `client.ts#listRepositories` /
 /// `api.ts#listOwnedRepos`): first 3 pages of `GET /user/repos`, 100/page,
 /// sorted by pushed, across owned/collaborator/org-member affiliations.
@@ -271,21 +291,7 @@ pub async fn list_repositories(token: &str) -> Result<Vec<GithubRepoOption>, Git
     let client = GithubClient::new(token);
     let mut out = Vec::new();
     for page in ["1", "2", "3"] {
-        let resp = client
-            .request(Method::GET, "/user/repos")
-            .query(&[
-                ("per_page", "100"),
-                ("sort", "pushed"),
-                ("page", page),
-                ("affiliation", "owner,collaborator,organization_member"),
-            ])
-            .send()
-            .await
-            .map_err(|e| GithubError::Api(e.to_string()))?;
-        if !resp.status().is_success() {
-            return Err(GithubError::Api(format!("repos HTTP {}", resp.status().as_u16())));
-        }
-        let repos: Vec<ApiOwnedRepo> = resp.json().await.map_err(|e| GithubError::Api(e.to_string()))?;
+        let repos = fetch_repos_page(&client, page).await?;
         out.extend(repos.into_iter().map(|r| GithubRepoOption {
             full_name: r.full_name,
             is_private: r.private,

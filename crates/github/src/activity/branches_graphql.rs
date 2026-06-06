@@ -130,6 +130,21 @@ struct FilterCtx<'a> {
     cutoff_ms: i64,
 }
 
+impl<'a> FilterCtx<'a> {
+    fn new(repo: &'a GqlBranchRepo, login: &'a str, cutoff_ms: i64) -> Self {
+        FilterCtx {
+            default_branch: repo.default_branch(),
+            default_oid: repo
+                .default_branch_ref
+                .as_ref()
+                .and_then(|r| r.target.as_ref())
+                .and_then(|t| t.oid.as_deref()),
+            login,
+            cutoff_ms,
+        }
+    }
+}
+
 fn commit_login(commit: &GqlCommit) -> Option<&str> {
     commit
         .author
@@ -139,20 +154,29 @@ fn commit_login(commit: &GqlCommit) -> Option<&str> {
         .map(|u| u.login.as_str())
 }
 
+/// Validates the commit basics shared by every `reject_reason` gate: a present
+/// commit target with a non-empty `committedDate` and an `oid`. Returns the
+/// rejection reason on the `Err` side so the caller can surface it.
+fn validated_commit(node: &GqlRefNode) -> Result<(&GqlCommit, &str, &str), &'static str> {
+    let commit = node.target.as_ref().ok_or("no commit target")?;
+    let (Some(committed_date), Some(oid)) = (commit.committed_date.as_deref(), commit.oid.as_deref())
+    else {
+        return Err("missing committedDate/oid");
+    };
+    if committed_date.is_empty() {
+        return Err("empty committedDate");
+    }
+    Ok((commit, committed_date, oid))
+}
+
 /// Returns `None` when the branch qualifies as a PR prompt, otherwise
 /// `Some(reason)` naming the gate that rejected it. `select_branches` logs the
 /// reason per branch (DIAGNOSTIC) so we can see why the list comes back empty.
 fn reject_reason(node: &GqlRefNode, ctx: &FilterCtx) -> Option<&'static str> {
-    let Some(commit) = node.target.as_ref() else {
-        return Some("no commit target");
+    let (commit, committed_date, oid) = match validated_commit(node) {
+        Ok(v) => v,
+        Err(reason) => return Some(reason),
     };
-    let (Some(committed_date), Some(oid)) = (commit.committed_date.as_deref(), commit.oid.as_deref())
-    else {
-        return Some("missing committedDate/oid");
-    };
-    if committed_date.is_empty() {
-        return Some("empty committedDate");
-    }
     if node.name == ctx.default_branch {
         return Some("is default branch");
     }
@@ -187,62 +211,65 @@ fn to_prompt(node: &GqlRefNode, repo_url: &str, default_branch: &str) -> GithubB
 }
 
 pub fn select_branches(repo: &GqlBranchRepo, login: &str, cutoff_ms: i64) -> Vec<GithubBranchPrompt> {
-    let default_branch = repo.default_branch();
-    let ctx = FilterCtx {
-        default_branch,
-        default_oid: repo
-            .default_branch_ref
-            .as_ref()
-            .and_then(|r| r.target.as_ref())
-            .and_then(|t| t.oid.as_deref()),
-        login,
-        cutoff_ms,
-    };
+    let ctx = FilterCtx::new(repo, login, cutoff_ms);
     let nodes = repo.refs.as_ref().map(|r| r.nodes.as_slice()).unwrap_or(&[]);
-
-    // DIAGNOSTIC (temporary): trace why the branch-prompt list comes back empty.
-    tracing::info!(
-        target: "branch_prompts",
-        repo = repo.name_with_owner(),
-        default_branch,
-        has_default_oid = ctx.default_oid.is_some(),
-        login,
-        cutoff_ms,
-        ref_count = nodes.iter().flatten().count(),
-        "select_branches: scanning repo"
-    );
+    log_scan(repo, &ctx, nodes.iter().flatten().count());
 
     let mut out = Vec::new();
     for node in nodes.iter().flatten() {
         match reject_reason(node, &ctx) {
             None => {
-                tracing::info!(
-                    target: "branch_prompts",
-                    repo = repo.name_with_owner(),
-                    branch = %node.name,
-                    "QUALIFIES"
-                );
-                out.push(to_prompt(node, &repo.url, default_branch));
+                log_qualifies(repo, node);
+                out.push(to_prompt(node, &repo.url, ctx.default_branch));
             }
-            Some(reason) => {
-                tracing::info!(
-                    target: "branch_prompts",
-                    repo = repo.name_with_owner(),
-                    branch = %node.name,
-                    author_login = node.target.as_ref().and_then(commit_login).unwrap_or("<null/none>"),
-                    committed_date = node
-                        .target
-                        .as_ref()
-                        .and_then(|c| c.committed_date.as_deref())
-                        .unwrap_or("<none>"),
-                    open_prs = node.associated_pull_requests.total_count,
-                    reason,
-                    "rejected"
-                );
-            }
+            Some(reason) => log_rejected(repo, node, reason),
         }
     }
     out
+}
+
+// DIAGNOSTIC (temporary): trace why the branch-prompt list comes back empty.
+
+/// Logs the per-repo scan header before filtering branches.
+fn log_scan(repo: &GqlBranchRepo, ctx: &FilterCtx, ref_count: usize) {
+    tracing::info!(
+        target: "branch_prompts",
+        repo = repo.name_with_owner(),
+        default_branch = ctx.default_branch,
+        has_default_oid = ctx.default_oid.is_some(),
+        login = ctx.login,
+        cutoff_ms = ctx.cutoff_ms,
+        ref_count,
+        "select_branches: scanning repo"
+    );
+}
+
+/// Logs a branch that passed every gate.
+fn log_qualifies(repo: &GqlBranchRepo, node: &GqlRefNode) {
+    tracing::info!(
+        target: "branch_prompts",
+        repo = repo.name_with_owner(),
+        branch = %node.name,
+        "QUALIFIES"
+    );
+}
+
+/// Logs a rejected branch with the gate that rejected it and the relevant fields.
+fn log_rejected(repo: &GqlBranchRepo, node: &GqlRefNode, reason: &'static str) {
+    tracing::info!(
+        target: "branch_prompts",
+        repo = repo.name_with_owner(),
+        branch = %node.name,
+        author_login = node.target.as_ref().and_then(commit_login).unwrap_or("<null/none>"),
+        committed_date = node
+            .target
+            .as_ref()
+            .and_then(|c| c.committed_date.as_deref())
+            .unwrap_or("<none>"),
+        open_prs = node.associated_pull_requests.total_count,
+        reason,
+        "rejected"
+    );
 }
 
 #[cfg(test)]

@@ -56,18 +56,24 @@ async fn fetch_repo_workflows(client: &GithubClient, coord: &RepoCoord) -> Githu
     .await;
     match result {
         None => error_repo(coord),
-        Some(data) => GithubRepoWorkflows {
-            repo_full_name: coord.full_name.clone(),
-            repo_url: format!("https://github.com/{}", coord.full_name),
-            default_branch: String::new(),
-            workflows: data
-                .workflows
-                .into_iter()
-                .filter(|w| w.state == "active")
-                .map(to_summary)
-                .collect(),
-            error: None,
-        },
+        Some(data) => ok_repo(coord, data),
+    }
+}
+
+/// Builds the success result for [`fetch_repo_workflows`], keeping only active
+/// workflows (port of `fetchWorkflows`' filter).
+fn ok_repo(coord: &RepoCoord, data: ApiWorkflows) -> GithubRepoWorkflows {
+    GithubRepoWorkflows {
+        repo_full_name: coord.full_name.clone(),
+        repo_url: format!("https://github.com/{}", coord.full_name),
+        default_branch: String::new(),
+        workflows: data
+            .workflows
+            .into_iter()
+            .filter(|w| w.state == "active")
+            .map(to_summary)
+            .collect(),
+        error: None,
     }
 }
 

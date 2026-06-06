@@ -33,7 +33,17 @@ pub async fn select_row(
 /// `account.ts#upsert`.
 pub async fn upsert_jira(db: &DatabaseConnection, input: UpsertJiraInput) -> Result<(), DbErr> {
     let now: DateTimeWithTimeZone = chrono::Utc::now().into();
-    let model = jira::ActiveModel {
+    jira::Entity::insert(upsert_model(input, now))
+        .on_conflict(upsert_on_conflict())
+        .exec(db)
+        .await?;
+    Ok(())
+}
+
+/// Builds the `ActiveModel` for [`upsert_jira`]. `selected_projects` and
+/// `last_used_at` are left `NotSet` so they survive a re-connect.
+fn upsert_model(input: UpsertJiraInput, now: DateTimeWithTimeZone) -> jira::ActiveModel {
+    jira::ActiveModel {
         user_id: Set(input.user_id),
         site_url: Set(input.site_url),
         cloud_id: Set(None),
@@ -52,31 +62,28 @@ pub async fn upsert_jira(db: &DatabaseConnection, input: UpsertJiraInput) -> Res
         // Preserved across re-connect.
         selected_projects: NotSet,
         last_used_at: NotSet,
-    };
+    }
+}
 
-    jira::Entity::insert(model)
-        .on_conflict(
-            OnConflict::column(jira::Column::UserId)
-                .update_columns([
-                    jira::Column::SiteUrl,
-                    jira::Column::CloudId,
-                    jira::Column::AccountId,
-                    jira::Column::Email,
-                    jira::Column::DisplayName,
-                    jira::Column::ApiTokenCiphertext,
-                    jira::Column::ApiTokenIv,
-                    jira::Column::ApiTokenAuthTag,
-                    jira::Column::LastFour,
-                    jira::Column::LastValidatedAt,
-                    jira::Column::ValidationStatus,
-                    jira::Column::ValidationError,
-                    jira::Column::UpdatedAt,
-                ])
-                .to_owned(),
-        )
-        .exec(db)
-        .await?;
-    Ok(())
+/// The `ON CONFLICT (user_id) DO UPDATE` clause for [`upsert_jira`].
+fn upsert_on_conflict() -> OnConflict {
+    OnConflict::column(jira::Column::UserId)
+        .update_columns([
+            jira::Column::SiteUrl,
+            jira::Column::CloudId,
+            jira::Column::AccountId,
+            jira::Column::Email,
+            jira::Column::DisplayName,
+            jira::Column::ApiTokenCiphertext,
+            jira::Column::ApiTokenIv,
+            jira::Column::ApiTokenAuthTag,
+            jira::Column::LastFour,
+            jira::Column::LastValidatedAt,
+            jira::Column::ValidationStatus,
+            jira::Column::ValidationError,
+            jira::Column::UpdatedAt,
+        ])
+        .to_owned()
 }
 
 /// Persists a validation outcome (re-validation failure path).

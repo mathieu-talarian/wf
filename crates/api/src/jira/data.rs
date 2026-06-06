@@ -64,20 +64,25 @@ pub(crate) async fn connected_client(
     Ok(load_connected(state, user_id).await?.client)
 }
 
+/// The `connected: false` dashboard payload returned when no Jira row exists.
+fn disconnected_dashboard() -> JiraDashboard {
+    JiraDashboard {
+        account: JiraAccountSummary {
+            connected: false,
+            site_url: None,
+            account_id: None,
+            display_name: None,
+        },
+        queues: vec![],
+        selected_projects: vec![],
+    }
+}
+
 /// `GET /me/jira/dashboard` (port of `runDashboard`): disconnected payload when
 /// no row, else every queue with a best-effort `touch_last_used`.
 pub async fn dashboard(state: &AppState, user_id: Uuid) -> Result<JiraDashboard, AppError> {
     let Some(row) = jira_pat::select_row(&state.db, user_id).await? else {
-        return Ok(JiraDashboard {
-            account: JiraAccountSummary {
-                connected: false,
-                site_url: None,
-                account_id: None,
-                display_name: None,
-            },
-            queues: vec![],
-            selected_projects: vec![],
-        });
+        return Ok(disconnected_dashboard());
     };
     let client = client_for(state, &row)?;
     let ctx = ctx_of(&row);

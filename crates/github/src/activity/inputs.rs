@@ -162,9 +162,7 @@ mod tests {
         assert!(out.dispatchable);
     }
 
-    #[test]
-    fn parses_input_specs() {
-        let yaml = r#"
+    const INPUT_SPECS_YAML: &str = r#"
 on:
   workflow_dispatch:
     inputs:
@@ -181,7 +179,10 @@ on:
         type: number
         default: 3
 "#;
-        let out = parse_workflow_inputs(yaml);
+
+    #[test]
+    fn parses_input_specs() {
+        let out = parse_workflow_inputs(INPUT_SPECS_YAML);
         assert!(out.dispatchable);
         assert_eq!(out.inputs.len(), 3);
 

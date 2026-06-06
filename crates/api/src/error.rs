@@ -80,93 +80,97 @@ fn validation_http_status(e: &PatValidationError) -> u16 {
     }
 }
 
+/// Convenience constructor for a Problem with no `reason` extension member.
+fn simple(status: u16, slug: &'static str, title: &'static str, detail: String) -> Parts {
+    Parts { status, slug, title, detail, reason: None }
+}
+
+fn github_validation_parts(e: &PatValidationError) -> Parts {
+    Parts {
+        status: validation_http_status(e),
+        slug: "github-token-rejected",
+        title: "GitHub token rejected",
+        detail: e.message.clone(),
+        reason: Some(e.status.as_str().to_string()),
+    }
+}
+
+fn github_parts(e: &GithubError) -> Parts {
+    match e {
+        GithubError::NotConnected => simple(
+            404,
+            "github-not-connected",
+            "GitHub not connected",
+            "No GitHub token is connected for this user.".to_string(),
+        ),
+        GithubError::Api(_) => simple(
+            502,
+            "github-request-failed",
+            "GitHub request failed",
+            "The upstream GitHub request did not succeed.".to_string(),
+        ),
+        GithubError::Write { status, message } => {
+            simple(*status, "github-write-failed", "GitHub action failed", message.clone())
+        }
+    }
+}
+
+fn jira_validation_parts(e: &JiraValidationError) -> Parts {
+    Parts {
+        status: jira_validation_http_status(e),
+        slug: "jira-token-rejected",
+        title: "Jira credentials rejected",
+        detail: e.message.clone(),
+        reason: Some(e.status.as_str().to_string()),
+    }
+}
+
+fn jira_write_parts(e: &JiraWriteError) -> Parts {
+    let status = if (400..600).contains(&e.status) { e.status } else { 502 };
+    simple(status, "jira-write-failed", "Jira action failed", e.message.clone())
+}
+
+/// Generic 500 for `Db`/`Internal` — details are deliberately opaque to clients.
+fn internal_parts() -> Parts {
+    simple(
+        500,
+        "internal-error",
+        "Internal Server Error",
+        "An unexpected error occurred.".to_string(),
+    )
+}
+
+fn jira_not_connected_parts() -> Parts {
+    simple(
+        404,
+        "jira-not-connected",
+        "Jira not connected",
+        "No Jira connection exists for this user.".to_string(),
+    )
+}
+
+fn jira_api_parts() -> Parts {
+    simple(
+        502,
+        "jira-request-failed",
+        "Jira request failed",
+        "The upstream Jira request did not succeed.".to_string(),
+    )
+}
+
 impl ErrorKind {
     fn parts(&self) -> Parts {
         match self {
-            ErrorKind::Auth(m) => Parts {
-                status: 401,
-                slug: "unauthorized",
-                title: "Unauthorized",
-                detail: m.clone(),
-                reason: None,
-            },
-            ErrorKind::Validation(m) => Parts {
-                status: 400,
-                slug: "bad-request",
-                title: "Bad Request",
-                detail: m.clone(),
-                reason: None,
-            },
-            ErrorKind::NotFound(m) => Parts {
-                status: 404,
-                slug: "not-found",
-                title: "Not Found",
-                detail: m.clone(),
-                reason: None,
-            },
-            ErrorKind::Db(_) | ErrorKind::Internal(_) => Parts {
-                status: 500,
-                slug: "internal-error",
-                title: "Internal Server Error",
-                detail: "An unexpected error occurred.".to_string(),
-                reason: None,
-            },
-            ErrorKind::GithubValidation(e) => Parts {
-                status: validation_http_status(e),
-                slug: "github-token-rejected",
-                title: "GitHub token rejected",
-                detail: e.message.clone(),
-                reason: Some(e.status.as_str().to_string()),
-            },
-            ErrorKind::Github(GithubError::NotConnected) => Parts {
-                status: 404,
-                slug: "github-not-connected",
-                title: "GitHub not connected",
-                detail: "No GitHub token is connected for this user.".to_string(),
-                reason: None,
-            },
-            ErrorKind::Github(GithubError::Api(_)) => Parts {
-                status: 502,
-                slug: "github-request-failed",
-                title: "GitHub request failed",
-                detail: "The upstream GitHub request did not succeed.".to_string(),
-                reason: None,
-            },
-            ErrorKind::Github(GithubError::Write { status, message }) => Parts {
-                status: *status,
-                slug: "github-write-failed",
-                title: "GitHub action failed",
-                detail: message.clone(),
-                reason: None,
-            },
-            ErrorKind::JiraValidation(e) => Parts {
-                status: jira_validation_http_status(e),
-                slug: "jira-token-rejected",
-                title: "Jira credentials rejected",
-                detail: e.message.clone(),
-                reason: Some(e.status.as_str().to_string()),
-            },
-            ErrorKind::JiraNotConnected(_) => Parts {
-                status: 404,
-                slug: "jira-not-connected",
-                title: "Jira not connected",
-                detail: "No Jira connection exists for this user.".to_string(),
-                reason: None,
-            },
-            ErrorKind::JiraWrite(e) => Parts {
-                status: if (400..600).contains(&e.status) { e.status } else { 502 },
-                slug: "jira-write-failed",
-                title: "Jira action failed",
-                detail: e.message.clone(),
-                reason: None,
-            },
-            ErrorKind::JiraApi(_) => Parts {
-                status: 502,
-                slug: "jira-request-failed",
-                title: "Jira request failed",
-                detail: "The upstream Jira request did not succeed.".to_string(),
-                reason: None,
-            },
+            ErrorKind::Auth(m) => simple(401, "unauthorized", "Unauthorized", m.clone()),
+            ErrorKind::Validation(m) => simple(400, "bad-request", "Bad Request", m.clone()),
+            ErrorKind::NotFound(m) => simple(404, "not-found", "Not Found", m.clone()),
+            ErrorKind::Db(_) | ErrorKind::Internal(_) => internal_parts(),
+            ErrorKind::GithubValidation(e) => github_validation_parts(e),
+            ErrorKind::Github(e) => github_parts(e),
+            ErrorKind::JiraValidation(e) => jira_validation_parts(e),
+            ErrorKind::JiraNotConnected(_) => jira_not_connected_parts(),
+            ErrorKind::JiraWrite(e) => jira_write_parts(e),
+            ErrorKind::JiraApi(_) => jira_api_parts(),
         }
     }
 }

@@ -13,7 +13,7 @@
 //! Never prints decrypted token plaintext — only masked metadata.
 
 use anyhow::{Context, Result};
-use sea_orm::{ConnectionTrait, DbBackend, Statement};
+use sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
 use wf_core::crypto::{Sealed, TokenCipher};
 use wf_db::{connect, ConnectOptions};
 
@@ -28,6 +28,14 @@ async fn main() -> Result<()> {
     let db = connect(&database_url, ConnectOptions::default())
         .await
         .context("connect failed")?;
+    spike_smoke_query(&db).await?;
+    spike_parameterized(&db).await?;
+    spike_decrypt(&db, &enc_key_b64).await?;
+    Ok(())
+}
+
+/// Spike 1: run a trivial `SELECT 1` smoke query against the live DB.
+async fn spike_smoke_query(db: &DatabaseConnection) -> Result<()> {
     let row = db
         .query_one_raw(Statement::from_string(
             DbBackend::Postgres,
@@ -37,7 +45,12 @@ async fn main() -> Result<()> {
         .context("no row from SELECT 1")?;
     let one: i32 = row.try_get("", "one")?;
     println!("  SELECT 1 -> {one}  ✓");
+    Ok(())
+}
 
+/// Spike 1b: run a parameterized query repeatedly to prove the pooler path
+/// does not trip `42P05` (prepared-statement caching off).
+async fn spike_parameterized(db: &DatabaseConnection) -> Result<()> {
     println!("== Spike 1b: repeated parameterized query (no 42P05) ==");
     for i in 0..5 {
         let r = db
@@ -53,7 +66,12 @@ async fn main() -> Result<()> {
         assert_eq!(v, i);
     }
     println!("  5x parameterized SELECT round-tripped  ✓");
+    Ok(())
+}
 
+/// Spike 2: decrypt a real `github_pat_connections` token sealed by the TS
+/// server, proving AES-GCM byte-compatibility on production data.
+async fn spike_decrypt(db: &DatabaseConnection, enc_key_b64: &str) -> Result<()> {
     println!("== Spike 2: decrypt a real github_pat_connections row ==");
     let count_row = db
         .query_one_raw(Statement::from_string(
@@ -70,6 +88,13 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
+    decrypt_first_pat(db, enc_key_b64).await?;
+    println!("\nALL PHASE 0 DB SPIKES PASSED ✓");
+    Ok(())
+}
+
+/// Read the first PAT row, decrypt it with `enc_key_b64`, and report (masked).
+async fn decrypt_first_pat(db: &DatabaseConnection, enc_key_b64: &str) -> Result<()> {
     let pat = db
         .query_one_raw(Statement::from_string(
             DbBackend::Postgres,
@@ -88,11 +113,15 @@ async fn main() -> Result<()> {
         auth_tag: pat.try_get("", "access_token_auth_tag")?,
     };
 
-    let key = decode_key(&enc_key_b64)?;
+    let key = decode_key(enc_key_b64)?;
     let cipher = TokenCipher::new(&key);
     let token = cipher.open(&sealed).context("AES-GCM open failed")?;
+    report_decrypted(&login, last_four.as_deref(), &token);
+    Ok(())
+}
 
-    // Masked verification only — never print the token.
+/// Print masked verification of a decrypted token — never the token itself.
+fn report_decrypted(login: &str, last_four: Option<&str>, token: &str) {
     let kind = if token.starts_with("github_pat_") {
         "fine_grained_pat"
     } else if token.starts_with("ghp_") {
@@ -101,12 +130,9 @@ async fn main() -> Result<()> {
         "unknown"
     };
     let tail = &token[token.len().saturating_sub(4)..];
-    let last_four_matches = last_four.as_deref() == Some(tail);
+    let last_four_matches = last_four == Some(tail);
     println!("  login={login}  kind={kind}  decrypted_len={}", token.len());
     println!("  last_four column matches decrypted tail: {last_four_matches}  ✓");
-
-    println!("\nALL PHASE 0 DB SPIKES PASSED ✓");
-    Ok(())
 }
 
 fn decode_key(b64: &str) -> Result<[u8; 32]> {

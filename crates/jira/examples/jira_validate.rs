@@ -5,10 +5,8 @@
 
 use wf_jira::{normalize_site_url, validate_credentials, JiraConnectInput, SiteUrlResult};
 
-#[tokio::main]
-async fn main() {
-    let _ = dotenvy::dotenv();
-
+/// Offline demo: deterministic site-URL normalization for a fixed sample set.
+fn demo_normalization() {
     println!("== site-URL normalization ==");
     for input in [
         "acme.atlassian.net",
@@ -23,7 +21,10 @@ async fn main() {
             SiteUrlResult::Err { reason } => println!("  ERR  {input:<38} -> {reason}"),
         }
     }
+}
 
+/// Live validation against /rest/api/3/myself when all three env vars are set.
+async fn live_validate() {
     match (
         std::env::var("JIRA_SITE_URL"),
         std::env::var("JIRA_EMAIL"),
@@ -42,4 +43,11 @@ async fn main() {
         }
         _ => println!("\n(set JIRA_SITE_URL/JIRA_EMAIL/JIRA_TOKEN to live-validate)"),
     }
+}
+
+#[tokio::main]
+async fn main() {
+    let _ = dotenvy::dotenv();
+    demo_normalization();
+    live_validate().await;
 }

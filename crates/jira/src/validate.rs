@@ -49,21 +49,24 @@ fn validation_from_api(err: &JiraApiError) -> JiraValidationError {
     JiraValidationError { status, message: status.message().to_string(), http_status: http }
 }
 
+/// Normalizes the site URL to an origin, mapping a parse failure to an
+/// `Invalid` validation error.
+fn resolve_origin(site_url: &str) -> Result<String, JiraValidationError> {
+    match normalize_site_url(site_url) {
+        SiteUrlResult::Ok { origin } => Ok(origin),
+        SiteUrlResult::Err { reason } => Err(JiraValidationError {
+            status: JiraValidationStatus::Invalid,
+            message: reason,
+            http_status: None,
+        }),
+    }
+}
+
 /// Validate Jira Cloud credentials (port of `validateCredentials`).
 pub async fn validate_credentials(
     input: &JiraConnectInput,
 ) -> Result<JiraValidated, JiraValidationError> {
-    let origin = match normalize_site_url(&input.site_url) {
-        SiteUrlResult::Ok { origin } => origin,
-        SiteUrlResult::Err { reason } => {
-            return Err(JiraValidationError {
-                status: JiraValidationStatus::Invalid,
-                message: reason,
-                http_status: None,
-            });
-        }
-    };
-
+    let origin = resolve_origin(&input.site_url)?;
     let client = JiraClient::new(&JiraCreds {
         site_url: origin.clone(),
         email: input.email.clone(),

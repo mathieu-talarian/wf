@@ -49,6 +49,31 @@ fn snapshot_for(row: &gh::Model, tab: GithubQueueKey) -> Option<GithubDashboard>
     serde_json::from_value(snap.get("data")?.clone()).ok()
 }
 
+/// Decrypts the stored access token, mapping a failure to an opaque GitHub error.
+fn decrypt_token(state: &AppState, row: &gh::Model) -> Result<String, AppError> {
+    state
+        .cipher
+        .open(&Sealed {
+            ciphertext: row.access_token_ciphertext.clone(),
+            iv: row.access_token_iv.clone(),
+            auth_tag: row.access_token_auth_tag.clone(),
+        })
+        .map_err(|_| AppError::from(GithubError::Api("token decryption failed".into())))
+}
+
+/// Writes a freshly fetched dashboard through to the in-memory cache and the
+/// durable snapshot (best-effort; a snapshot write failure is non-fatal).
+async fn write_through(
+    state: &AppState,
+    user_id: Uuid,
+    tab: GithubQueueKey,
+    dashboard: &GithubDashboard,
+) {
+    state.dashboard_cache.set(user_id, tab, dashboard.clone());
+    let snapshot = serde_json::to_value(dashboard).unwrap_or(serde_json::Value::Null);
+    let _ = github_pat::set_dashboard_snapshot(&state.db, user_id, tab.as_str(), snapshot).await;
+}
+
 /// Fetch fresh from GitHub; write through to the token cache, the dashboard
 /// cache, and the durable snapshot (port of `dashboard-load.ts#refresh`).
 async fn refresh(
@@ -57,15 +82,7 @@ async fn refresh(
     tab: GithubQueueKey,
     row: &gh::Model,
 ) -> Result<GithubDashboard, AppError> {
-    let token = state
-        .cipher
-        .open(&Sealed {
-            ciphertext: row.access_token_ciphertext.clone(),
-            iv: row.access_token_iv.clone(),
-            auth_tag: row.access_token_auth_tag.clone(),
-        })
-        .map_err(|_| AppError::from(GithubError::Api("token decryption failed".into())))?;
-
+    let token = decrypt_token(state, row)?;
     let login = row.github_login.clone();
     let repos = json_string_array(&row.selected_repos);
     state.token_cache.set(
@@ -79,10 +96,16 @@ async fn refresh(
         queues: data.queues,
         queue_pulls: data.queue_pulls,
     };
-    state.dashboard_cache.set(user_id, tab, dashboard.clone());
-    let snapshot = serde_json::to_value(&dashboard).unwrap_or(serde_json::Value::Null);
-    let _ = github_pat::set_dashboard_snapshot(&state.db, user_id, tab.as_str(), snapshot).await;
+    write_through(state, user_id, tab, &dashboard).await;
     Ok(dashboard)
+}
+
+/// Best-effort background bump of `last_used_at` (fire-and-forget).
+fn spawn_touch_last_used(state: &web::Data<AppState>, user_id: Uuid) {
+    let st = state.clone();
+    tokio::spawn(async move {
+        let _ = github_pat::touch_last_used(&st.db, user_id).await;
+    });
 }
 
 /// SWR dashboard load (port of `runDashboard`).
@@ -99,14 +122,7 @@ pub async fn get_dashboard(
     let Some(row) = github_pat::select_row(&state.db, user_id).await? else {
         return Ok(GithubDashboard::empty());
     };
-
-    // Background: bump last_used_at.
-    {
-        let st = state.clone();
-        tokio::spawn(async move {
-            let _ = github_pat::touch_last_used(&st.db, user_id).await;
-        });
-    }
+    spawn_touch_last_used(state, user_id);
 
     let stale = state
         .dashboard_cache
@@ -117,16 +133,26 @@ pub async fn get_dashboard(
     match stale {
         None => refresh(state, user_id, tab, &row).await,
         Some(stale) => {
-            // Single-flight background revalidation.
-            if state.dashboard_cache.try_begin_refresh(user_id, tab) {
-                let st = state.clone();
-                tokio::spawn(async move {
-                    let _ = refresh(&st, user_id, tab, &row).await;
-                    st.dashboard_cache.end_refresh(user_id, tab);
-                });
-            }
+            spawn_revalidate(state, user_id, tab, row);
             Ok(stale)
         }
+    }
+}
+
+/// Single-flight background revalidation: refresh in the background iff no other
+/// refresh for this `(user, tab)` is already in flight.
+fn spawn_revalidate(
+    state: &web::Data<AppState>,
+    user_id: Uuid,
+    tab: GithubQueueKey,
+    row: gh::Model,
+) {
+    if state.dashboard_cache.try_begin_refresh(user_id, tab) {
+        let st = state.clone();
+        tokio::spawn(async move {
+            let _ = refresh(&st, user_id, tab, &row).await;
+            st.dashboard_cache.end_refresh(user_id, tab);
+        });
     }
 }
 

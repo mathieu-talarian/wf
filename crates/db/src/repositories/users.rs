@@ -20,18 +20,8 @@ pub async fn upsert_from_auth(
     // (the TS path lets Postgres reject the cast → 500).
     let id = Uuid::parse_str(&authed.id)
         .map_err(|e| DbErr::Custom(format!("invalid user id {:?}: {e}", authed.id)))?;
-    let now: DateTimeWithTimeZone = chrono::Utc::now().into();
 
-    let model = users::ActiveModel {
-        id: Set(id),
-        email: Set(authed.email.clone()),
-        name: Set(authed.name.clone()),
-        avatar_url: Set(authed.avatar_url.clone()),
-        created_at: Set(now),
-        updated_at: Set(now),
-    };
-
-    users::Entity::insert(model)
+    users::Entity::insert(active_model(id, authed))
         .on_conflict(
             OnConflict::column(users::Column::Id)
                 .update_columns([
@@ -44,4 +34,18 @@ pub async fn upsert_from_auth(
         )
         .exec_with_returning(db)
         .await
+}
+
+/// Builds the `ActiveModel` for [`upsert_from_auth`], stamping `created_at`/
+/// `updated_at` with the current time (the conflict clause keeps `created_at`).
+fn active_model(id: Uuid, authed: &AuthedUser) -> users::ActiveModel {
+    let now: DateTimeWithTimeZone = chrono::Utc::now().into();
+    users::ActiveModel {
+        id: Set(id),
+        email: Set(authed.email.clone()),
+        name: Set(authed.name.clone()),
+        avatar_url: Set(authed.avatar_url.clone()),
+        created_at: Set(now),
+        updated_at: Set(now),
+    }
 }

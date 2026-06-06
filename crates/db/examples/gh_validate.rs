@@ -5,10 +5,10 @@
 //!   set -a; . ./.env; set +a; cargo run -p wf-db --example gh_validate
 
 use anyhow::{Context, Result};
-use sea_orm::{ConnectionTrait, DbBackend, Statement};
+use sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
 use wf_core::crypto::{Sealed, TokenCipher};
 use wf_db::{connect, ConnectOptions};
-use wf_github::validate_token;
+use wf_github::{validate_token, PatValidationResult};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -17,6 +17,20 @@ async fn main() -> Result<()> {
     let enc_key_b64 = std::env::var("GITHUB_TOKEN_ENCRYPTION_KEY")?;
 
     let db = connect(&database_url, ConnectOptions::default()).await?;
+    let (login, token) = load_token(&db, &enc_key_b64).await?;
+
+    println!("Validating stored token for github_login={login} against api.github.com ...");
+    match validate_token(&token).await {
+        Ok(r) => print_valid(&r),
+        Err(e) => {
+            println!("REJECTED: status={} http={:?} msg={}", e.status.as_str(), e.http_status, e.message);
+        }
+    }
+    Ok(())
+}
+
+/// Read the first PAT row and decrypt it, returning `(github_login, token)`.
+async fn load_token(db: &DatabaseConnection, enc_key_b64: &str) -> Result<(String, String)> {
     let row = db
         .query_one_raw(Statement::from_string(
             DbBackend::Postgres,
@@ -32,24 +46,19 @@ async fn main() -> Result<()> {
         iv: row.try_get("", "access_token_iv")?,
         auth_tag: row.try_get("", "access_token_auth_tag")?,
     };
-    let key = decode_key(&enc_key_b64)?;
+    let key = decode_key(enc_key_b64)?;
     let token = TokenCipher::new(&key).open(&sealed)?;
+    Ok((login, token))
+}
 
-    println!("Validating stored token for github_login={login} against api.github.com ...");
-    match validate_token(&token).await {
-        Ok(r) => {
-            println!("VALID ✓");
-            println!("  github_user_id : {}", r.github_user_id);
-            println!("  login          : {}", r.login);
-            println!("  token_kind     : {}", r.token_kind.as_str());
-            println!("  scopes         : {:?}", r.scopes);
-            println!("  expires_at     : {:?}", r.expires_at);
-        }
-        Err(e) => {
-            println!("REJECTED: status={} http={:?} msg={}", e.status.as_str(), e.http_status, e.message);
-        }
-    }
-    Ok(())
+/// Print the (non-sensitive) fields of a successful validation result.
+fn print_valid(r: &PatValidationResult) {
+    println!("VALID ✓");
+    println!("  github_user_id : {}", r.github_user_id);
+    println!("  login          : {}", r.login);
+    println!("  token_kind     : {}", r.token_kind.as_str());
+    println!("  scopes         : {:?}", r.scopes);
+    println!("  expires_at     : {:?}", r.expires_at);
 }
 
 fn decode_key(b64: &str) -> Result<[u8; 32]> {

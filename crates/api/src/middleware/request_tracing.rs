@@ -138,19 +138,30 @@ where
 
             let (route, status_code) = summarize(&outcome, &fallback_route);
             apply_span_outcome(&outcome_span, &outcome, &route, status_code);
-
-            metrics.duration.record(
-                elapsed,
-                &[
-                    KeyValue::new("http.request.method", method),
-                    KeyValue::new("http.route", route),
-                    KeyValue::new("http.response.status_code", i64::from(status_code)),
-                ],
-            );
+            record_duration(&metrics, elapsed, method, route, status_code);
 
             outcome
         })
     }
+}
+
+/// Records the `http.server.request.duration` histogram with method/route/status
+/// attributes (split out of `call` to keep the service future compact).
+fn record_duration(
+    metrics: &HttpMetrics,
+    elapsed: f64,
+    method: String,
+    route: String,
+    status_code: u16,
+) {
+    metrics.duration.record(
+        elapsed,
+        &[
+            KeyValue::new("http.request.method", method),
+            KeyValue::new("http.route", route),
+            KeyValue::new("http.response.status_code", i64::from(status_code)),
+        ],
+    );
 }
 
 /// Build the server root span with stable OTel HTTP semantic-convention fields.
