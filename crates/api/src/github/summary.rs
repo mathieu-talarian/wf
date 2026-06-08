@@ -5,7 +5,7 @@ use chrono::SecondsFormat;
 use sea_orm::prelude::DateTimeWithTimeZone;
 use serde::Serialize;
 use serde_json::Value;
-use wf_db::entities::github_pat_connections as gh;
+use wf_db::tables::github_pat_connections as gh;
 
 #[derive(Serialize, Default, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]

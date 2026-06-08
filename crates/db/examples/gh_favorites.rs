@@ -6,8 +6,7 @@
 use anyhow::{Context, Result};
 use sea_orm::prelude::Uuid;
 use sea_orm::{DatabaseConnection, EntityTrait};
-use wf_db::entities::github_pat_connections as gh;
-use wf_db::repositories::github_pat::{get_favorites, set_repo_favorites, FavoritesMap};
+use wf_db::tables::github_pat_connections::{self as gh, get_favorites, set_repo_favorites, FavoritesMap};
 use wf_db::{connect, ConnectOptions};
 
 #[tokio::main]

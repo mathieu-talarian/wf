@@ -10,7 +10,7 @@ use sea_orm::ActiveValue::{NotSet, Set};
 use sea_orm::{ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter};
 use wf_core::Sealed;
 
-use crate::entities::github_pat_connections as gh;
+use super::entity as gh;
 
 /// Input for connect/re-connect (port of `UpsertPatInputT`).
 pub struct UpsertPatInput {

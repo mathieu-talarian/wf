@@ -8,7 +8,7 @@ use sea_orm::ActiveValue::{NotSet, Set};
 use sea_orm::{ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter};
 use wf_core::Sealed;
 
-use crate::entities::jira_pat_connections as jira;
+use super::entity as jira;
 
 /// Input for connect/re-connect (port of `UpsertJiraInputT`).
 pub struct UpsertJiraInput {

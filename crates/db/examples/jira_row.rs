@@ -4,7 +4,7 @@
 
 use anyhow::Result;
 use sea_orm::EntityTrait;
-use wf_db::entities::jira_pat_connections as jira;
+use wf_db::tables::jira_pat_connections as jira;
 use wf_db::{connect, ConnectOptions};
 
 #[tokio::main]

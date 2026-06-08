@@ -1,5 +1,5 @@
-//! Database layer: connection management and (Phase 2+) SeaORM entities +
-//! repositories.
+//! Database layer: connection management and per-table modules under `tables`
+//! (each owns its SeaORM entity + CRUD operations).
 //!
 //! The one critical infra detail (migration plan §6.1): when `DATABASE_URL`
 //! points at Supabase's **transaction pooler on port 6543** (Supavisor), it
@@ -18,8 +18,7 @@ use sea_orm::{DatabaseConnection, SqlxPostgresConnector};
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use thiserror::Error;
 
-pub mod entities;
-pub mod repositories;
+pub mod tables;
 
 // Re-export the SeaORM connection type so the api crate need not depend on
 // sea-orm directly just to name it.

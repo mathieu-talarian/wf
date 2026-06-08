@@ -12,7 +12,7 @@ use wf_github::{
 
 use crate::auth::AuthUser;
 use crate::error::AppError;
-use wf_db::repositories::github_pat;
+use wf_db::tables::github_pat_connections as github_pat;
 
 use crate::github::{activity, dashboard, pat};
 use crate::state::AppState;

@@ -5,8 +5,7 @@
 
 use sea_orm::prelude::Uuid;
 use wf_core::Sealed;
-use wf_db::entities::jira_pat_connections as jira;
-use wf_db::repositories::jira_pat;
+use wf_db::tables::jira_pat_connections as jira;
 use wf_jira::{
     create_meta as jira_create_meta, edit_meta as jira_edit_meta, fetch_dashboard_queues,
     fetch_issue_detail, fetch_issue_page, fetch_queue_page, list_boards, list_issue_types,
@@ -49,7 +48,7 @@ fn ctx_of(row: &jira::Model) -> QueueJqlCtx {
 }
 
 async fn load_connected(state: &AppState, user_id: Uuid) -> Result<Connected, AppError> {
-    let row = jira_pat::select_row(&state.db, user_id)
+    let row = jira::select_row(&state.db, user_id)
         .await?
         .ok_or_else(|| AppError::from(JiraNotConnected("No Jira connection".to_string())))?;
     let client = client_for(state, &row)?;
@@ -81,13 +80,13 @@ fn disconnected_dashboard() -> JiraDashboard {
 /// `GET /me/jira/dashboard` (port of `runDashboard`): disconnected payload when
 /// no row, else every queue with a best-effort `touch_last_used`.
 pub async fn dashboard(state: &AppState, user_id: Uuid) -> Result<JiraDashboard, AppError> {
-    let Some(row) = jira_pat::select_row(&state.db, user_id).await? else {
+    let Some(row) = jira::select_row(&state.db, user_id).await? else {
         return Ok(disconnected_dashboard());
     };
     let client = client_for(state, &row)?;
     let ctx = ctx_of(&row);
     let queues = fetch_dashboard_queues(&client, &ctx).await;
-    let _ = jira_pat::touch_last_used(&state.db, user_id).await;
+    let _ = jira::touch_last_used(&state.db, user_id).await;
     Ok(JiraDashboard {
         account: JiraAccountSummary {
             connected: true,

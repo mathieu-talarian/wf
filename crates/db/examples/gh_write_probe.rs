@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use anyhow::{Context, Result};
 use sea_orm::EntityTrait;
 use wf_core::crypto::{Sealed, TokenCipher};
-use wf_db::entities::github_pat_connections as gh;
+use wf_db::tables::github_pat_connections as gh;
 use wf_db::{connect, ConnectOptions};
 use wf_github::{dispatch_workflow, merge_pull, GithubError, GithubMergeMethod, RepoRef};
 

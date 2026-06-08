@@ -10,7 +10,7 @@ use sea_orm::ActiveValue::Set;
 use sea_orm::{DatabaseConnection, DbErr, EntityTrait};
 use wf_core::AuthedUser;
 
-use crate::entities::users;
+use super::entity as users;
 
 pub async fn upsert_from_auth(
     db: &DatabaseConnection,

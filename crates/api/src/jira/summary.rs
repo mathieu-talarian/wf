@@ -5,7 +5,7 @@
 use chrono::SecondsFormat;
 use sea_orm::prelude::DateTimeWithTimeZone;
 use serde::Serialize;
-use wf_db::entities::jira_pat_connections as jira;
+use wf_db::tables::jira_pat_connections as jira;
 
 use crate::github::summary::json_string_array;
 

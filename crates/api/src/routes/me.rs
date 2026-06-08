@@ -5,7 +5,7 @@
 use actix_web::{web, HttpResponse};
 use chrono::SecondsFormat;
 use serde::Serialize;
-use wf_db::repositories::users;
+use wf_db::tables::users;
 
 use crate::auth::AuthUser;
 use crate::error::AppError;

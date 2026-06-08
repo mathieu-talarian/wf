@@ -7,8 +7,7 @@ use chrono::SecondsFormat;
 use sea_orm::prelude::Uuid;
 use serde::Serialize;
 use wf_core::Sealed;
-use wf_db::entities::github_pat_connections as gh;
-use wf_db::repositories::github_pat;
+use wf_db::tables::github_pat_connections as gh;
 use wf_github::{
     enrich_pull_request, enrich_pull_requests, fetch_dashboard, fetch_queue_pulls,
     list_repositories, GithubAccountSummary, GithubDashboard, GithubError, GithubPullEnrichmentResult,
@@ -71,7 +70,7 @@ async fn write_through(
 ) {
     state.dashboard_cache.set(user_id, tab, dashboard.clone());
     let snapshot = serde_json::to_value(dashboard).unwrap_or(serde_json::Value::Null);
-    let _ = github_pat::set_dashboard_snapshot(&state.db, user_id, tab.as_str(), snapshot).await;
+    let _ = gh::set_dashboard_snapshot(&state.db, user_id, tab.as_str(), snapshot).await;
 }
 
 /// Fetch fresh from GitHub; write through to the token cache, the dashboard
@@ -104,7 +103,7 @@ async fn refresh(
 fn spawn_touch_last_used(state: &web::Data<AppState>, user_id: Uuid) {
     let st = state.clone();
     tokio::spawn(async move {
-        let _ = github_pat::touch_last_used(&st.db, user_id).await;
+        let _ = gh::touch_last_used(&st.db, user_id).await;
     });
 }
 
@@ -119,7 +118,7 @@ pub async fn get_dashboard(
             return Ok(hit.value);
         }
     }
-    let Some(row) = github_pat::select_row(&state.db, user_id).await? else {
+    let Some(row) = gh::select_row(&state.db, user_id).await? else {
         return Ok(GithubDashboard::empty());
     };
     spawn_touch_last_used(state, user_id);
@@ -209,7 +208,7 @@ pub async fn set_selected_repos(
     user_id: Uuid,
     repos: &[String],
 ) -> Result<crate::github::summary::GithubConnectionSummary, AppError> {
-    github_pat::set_selected_repos(&state.db, user_id, repos).await?;
+    gh::set_selected_repos(&state.db, user_id, repos).await?;
     state.token_cache.clear(user_id);
     state.dashboard_cache.clear(user_id);
     super::pat::status(state, user_id).await

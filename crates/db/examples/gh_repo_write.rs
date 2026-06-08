@@ -8,8 +8,7 @@
 use anyhow::{Context, Result};
 use sea_orm::prelude::Uuid;
 use sea_orm::{DatabaseConnection, EntityTrait};
-use wf_db::entities::github_pat_connections as gh;
-use wf_db::repositories::github_pat;
+use wf_db::tables::github_pat_connections as gh;
 use wf_db::{connect, ConnectOptions};
 
 #[tokio::main]
@@ -39,10 +38,10 @@ fn selected_repos(row: &gh::Model) -> Vec<String> {
 
 /// Exercise the jsonb write paths: `touch_last_used` + `set_selected_repos`.
 async fn run_writes(db: &DatabaseConnection, user_id: Uuid, current: &[String]) -> Result<()> {
-    github_pat::touch_last_used(db, user_id).await?;
+    gh::touch_last_used(db, user_id).await?;
     println!("touch_last_used ✓");
 
-    github_pat::set_selected_repos(db, user_id, current).await?;
+    gh::set_selected_repos(db, user_id, current).await?;
     println!("set_selected_repos (same values) ✓");
     Ok(())
 }

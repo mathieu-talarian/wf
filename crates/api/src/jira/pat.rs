@@ -4,8 +4,7 @@
 
 use sea_orm::prelude::Uuid;
 use wf_core::Sealed;
-use wf_db::entities::jira_pat_connections as jira;
-use wf_db::repositories::jira_pat::{self, UpsertJiraInput};
+use wf_db::tables::jira_pat_connections::{self as jira, UpsertJiraInput};
 use wf_jira::{validate_credentials, JiraConnectInput, JiraNotConnected, JiraValidated};
 
 use crate::error::AppError;
@@ -13,7 +12,7 @@ use crate::jira::summary::{self, JiraConnectionSummary};
 use crate::state::AppState;
 
 pub async fn status(state: &AppState, user_id: Uuid) -> Result<JiraConnectionSummary, AppError> {
-    let row = jira_pat::select_row(&state.db, user_id).await?;
+    let row = jira::select_row(&state.db, user_id).await?;
     Ok(summary::from_row(row))
 }
 
@@ -37,7 +36,7 @@ async fn store_validated(
     validated: JiraValidated,
 ) -> Result<(), AppError> {
     let sealed: Sealed = state.cipher.seal(token).map_err(|e| AppError::internal(anyhow::anyhow!(e)))?;
-    jira_pat::upsert_jira(
+    jira::upsert_jira(
         &state.db,
         UpsertJiraInput {
             user_id,
@@ -66,7 +65,7 @@ pub async fn connect(
 /// Re-validates the stored credentials. On a validation failure, persists the
 /// status before surfacing it (port of `markAndFail`).
 pub async fn validate(state: &AppState, user_id: Uuid) -> Result<JiraConnectionSummary, AppError> {
-    let row = jira_pat::select_row(&state.db, user_id)
+    let row = jira::select_row(&state.db, user_id)
         .await?
         .ok_or_else(|| AppError::from(JiraNotConnected("No Jira connection".to_string())))?;
     let token = open_token(state, &row)?;
@@ -77,7 +76,7 @@ pub async fn validate(state: &AppState, user_id: Uuid) -> Result<JiraConnectionS
             store_validated(state, user_id, &input.token, input.email.clone(), validated).await?;
         }
         Err(e) => {
-            let _ = jira_pat::mark_validation(&state.db, user_id, e.status.as_str(), &e.message).await;
+            let _ = jira::mark_validation(&state.db, user_id, e.status.as_str(), &e.message).await;
             return Err(e.into());
         }
     }
@@ -85,7 +84,7 @@ pub async fn validate(state: &AppState, user_id: Uuid) -> Result<JiraConnectionS
 }
 
 pub async fn disconnect(state: &AppState, user_id: Uuid) -> Result<(), AppError> {
-    jira_pat::disconnect(&state.db, user_id).await?;
+    jira::disconnect(&state.db, user_id).await?;
     Ok(())
 }
 
@@ -94,7 +93,7 @@ pub async fn set_projects(
     user_id: Uuid,
     projects: &[String],
 ) -> Result<JiraConnectionSummary, AppError> {
-    jira_pat::set_selected_projects(&state.db, user_id, projects).await?;
+    jira::set_selected_projects(&state.db, user_id, projects).await?;
     status(state, user_id).await
 }
 

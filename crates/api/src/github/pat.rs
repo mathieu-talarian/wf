@@ -3,7 +3,7 @@
 
 use sea_orm::prelude::Uuid;
 use wf_core::Sealed;
-use wf_db::repositories::github_pat::{self, UpsertPatInput};
+use wf_db::tables::github_pat_connections::{self as gh, UpsertPatInput};
 use wf_github::types::PatValidationResult;
 use wf_github::{validate_token, GithubError};
 
@@ -16,7 +16,7 @@ pub async fn status(
     state: &AppState,
     user_id: Uuid,
 ) -> Result<GithubConnectionSummary, AppError> {
-    let row = github_pat::select_row(&state.db, user_id).await?;
+    let row = gh::select_row(&state.db, user_id).await?;
     Ok(summary::from_row(row))
 }
 
@@ -32,7 +32,7 @@ async fn store_validated(
         .seal(token)
         .map_err(|e| AppError::internal(anyhow::anyhow!(e)))?;
 
-    github_pat::upsert_pat(
+    gh::upsert_pat(
         &state.db,
         UpsertPatInput {
             user_id,
@@ -67,7 +67,7 @@ pub async fn validate(
     state: &AppState,
     user_id: Uuid,
 ) -> Result<GithubConnectionSummary, AppError> {
-    let row = github_pat::select_row(&state.db, user_id)
+    let row = gh::select_row(&state.db, user_id)
         .await?
         .ok_or(AppError::from(GithubError::NotConnected))?;
 
@@ -85,7 +85,7 @@ pub async fn validate(
             store_validated(state, user_id, &token, result).await?;
         }
         Err(e) => {
-            let _ = github_pat::mark_validation(&state.db, user_id, e.status.as_str(), &e.message)
+            let _ = gh::mark_validation(&state.db, user_id, e.status.as_str(), &e.message)
                 .await;
             return Err(e.into());
         }
@@ -94,7 +94,7 @@ pub async fn validate(
 }
 
 pub async fn disconnect(state: &AppState, user_id: Uuid) -> Result<(), AppError> {
-    github_pat::disconnect(&state.db, user_id).await?;
+    gh::disconnect(&state.db, user_id).await?;
     state.token_cache.clear(user_id);
     Ok(())
 }
@@ -107,7 +107,7 @@ pub async fn resolve_pat(
     if let Some(cached) = state.token_cache.get(user_id) {
         return Ok(Some(cached));
     }
-    let Some(row) = github_pat::select_row(&state.db, user_id).await? else {
+    let Some(row) = gh::select_row(&state.db, user_id).await? else {
         return Ok(None);
     };
     let token = state

@@ -4,7 +4,7 @@
 
 use anyhow::Result;
 use sea_orm::EntityTrait;
-use wf_db::entities::github_pat_connections as gh;
+use wf_db::tables::github_pat_connections as gh;
 use wf_db::{connect, ConnectOptions};
 
 #[tokio::main]
