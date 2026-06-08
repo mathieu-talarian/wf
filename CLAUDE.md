@@ -1,7 +1,9 @@
 # Workflow backend — Rust rewrite
 
-Rust port of the TypeScript backend. Faithful port; TS source-of-truth (read-only):
-`../workflow/apps/server`. Spec: `2026-06-03-ts-to-rust-backend.md`.
+## Tools must use
+- Serena 
+- Sequential thinking
+- context7
 
 ## Build & verify
 - Lint gate (CI): `cargo clippy --all --all-targets --locked -- -D warnings` — run this, not plain clippy.
@@ -12,7 +14,7 @@ Rust port of the TypeScript backend. Faithful port; TS source-of-truth (read-onl
 
 ## Architecture
 - `wf-core` — config, AES-256-GCM `TokenCipher`, RFC 9457 problem, auth types (no actix/db deps).
-- `wf-db` — SeaORM entities + repositories; `connect()` (statement-cache disabled).
+- `wf-db` — one directory per table under `src/tables/<table>/`: `entity.rs` (SeaORM schema), `crud.rs` (typed inputs + all CRUD), `mod.rs` (glob-re-exports both → callers use one import `wf_db::tables::<table>`). `connect()` disables the statement cache.
 - `wf-github` / `wf-jira` — `reqwest` clients + domain logic for each integration.
 - `wf-api` — actix-web bin: `AppState` (DI), `AuthUser` extractor (Supabase JWKS), routes, middleware. Entry: `crates/api/src/main.rs`.
   - Observability: `crates/api/src/telemetry.rs` (OTLP traces+metrics+logs) + `middleware/request_tracing.rs` (root span, trace propagation, `http.server.*` metrics). `main()` holds a `TelemetryGuard` and calls `shutdown()` after the server stops.
@@ -40,4 +42,5 @@ Rust port of the TypeScript backend. Faithful port; TS source-of-truth (read-onl
 ## Conventions
 - Response DTOs: `#[serde(rename_all = "camelCase")]`; timestamps ISO8601 millis+Z (`to_rfc3339_opts(SecondsFormat::Millis, true)`).
 - Errors: return `AppError` → RFC 9457 `application/problem+json` (carries `instance`/`reason`).
+- DB writes: every `ActiveModel` is built inside that table's `crud.rs` (the only construction site); callers pass a typed input struct (e.g. `UpsertPatInput`) and never touch `ActiveModel`. New table → new `src/tables/<table>/` with the same `entity.rs`/`crud.rs`/`mod.rs` trio.
 - Tooling: prefer Serena MCP for code edits/reads; context7 for library docs.
