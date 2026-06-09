@@ -32,6 +32,11 @@ pub async fn select_row(
     gh::Entity::find_by_id(user_id).one(db).await
 }
 
+/// All connections — the tick's reconcile pass enumerates these (A1 §4.2.1).
+pub async fn list_all(db: &DatabaseConnection) -> Result<Vec<gh::Model>, DbErr> {
+    gh::Entity::find().all(db).await
+}
+
 /// Insert-or-update on `user_id`, preserving `created_at`, `last_used_at`, and
 /// the selection/favorites/snapshot jsonb columns (those are never touched
 /// here) — matches `account.ts#upsert`/`buildUpsertRow`.

@@ -28,6 +28,11 @@ pub async fn select_row(
     jira::Entity::find_by_id(user_id).one(db).await
 }
 
+/// All connections — the tick's reconcile pass enumerates these (A1 §4.2.1).
+pub async fn list_all(db: &DatabaseConnection) -> Result<Vec<jira::Model>, DbErr> {
+    jira::Entity::find().all(db).await
+}
+
 /// Insert-or-update on `user_id`. Re-connect preserves `created_at`,
 /// `last_used_at`, and `selected_projects` (none are in the update set), matching
 /// `account.ts#upsert`.
