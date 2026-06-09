@@ -169,7 +169,9 @@ from fixtures.
 Jira issue deltas must request enough fields for the vocabulary:
 `summary`, `status.id`, `status.name`, `status.statusCategory`, `created`,
 `updated`, `project`, and a stable issue id/key. For A1, `transitioned` means
-"status changed relative to the last ingested status for this issue"; if multiple
+"status changed relative to the last ingested status for this issue", where the
+last ingested status is read from the latest `events` row for that issue (same
+user, same site), falling back to "no prior status" → `created`; if multiple
 Jira status changes happen between polls and the delta response does not include
 changelog history, A1 records the latest observed transition and does not promise
 every intermediate status.
@@ -181,7 +183,10 @@ Encodes **provider instance + entity + state**, so re-polling an unchanged entit
 collides for the same user but never suppresses another user's event. Proposed
 forms:
 - workflow run: `repo:{owner}/{repo}:wfrun:{run_id}:{run_attempt}:{conclusion}`
-- pull request: `repo:{owner}/{repo}:pr:{number}:{state}` (`state` ∈ open/merged/closed)
+- pull request: `repo:{owner}/{repo}:pr:{number}:{state}` (`state` ∈ open/merged/closed).
+  Like Jira, A1 does not promise every intermediate PR state: a close → reopen →
+  close sequence collides on the second `closed` (and a reopen collides with the
+  original `open`), so only the first observation of each state is recorded.
 - jira issue created: `site:{site_or_cloud_id}:issue:{issueKey}:created`
 - jira status change: `site:{site_or_cloud_id}:issue:{issueKey}:status:{statusId}:updated:{updated}`
 
@@ -239,7 +244,9 @@ connection.
   across re-polls; cursor advance; backoff math; scope reconciliation from
   `selected_repos` / `selected_projects`; compound cursor tie handling; lease
   claim/update guards.
-- **Integration:** drive the tick against **wiremock** GitHub/Jira endpoints
+- **Integration:** env-gated on a real `DATABASE_URL` (skip when absent —
+  matching the existing live-harness pattern; no new CI database infra in A1):
+  drive the tick against **wiremock** GitHub/Jira endpoints
   serving fixtures → assert `events` rows; re-run the same tick → assert **no
   duplicates** (dedup) and cursor advanced; run two concurrent ticks over the
   same due rows → assert each scope is processed once; seed two users watching
