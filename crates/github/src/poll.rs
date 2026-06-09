@@ -123,6 +123,7 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/repos/o/r/actions/runs"))
             .and(query_param("status", "completed"))
+            .and(query_param("per_page", "50"))
             .respond_with(ResponseTemplate::new(200).set_body_json(run_fixture()))
             .mount(&server)
             .await;
@@ -146,6 +147,10 @@ mod tests {
         }]);
         Mock::given(method("GET"))
             .and(path("/repos/o/r/pulls"))
+            .and(query_param("state", "all"))
+            .and(query_param("sort", "updated"))
+            .and(query_param("direction", "desc"))
+            .and(query_param("per_page", "50"))
             .respond_with(ResponseTemplate::new(200).set_body_json(pulls))
             .mount(&server)
             .await;
