@@ -1,7 +1,9 @@
 //! Branch→PR-prompt GraphQL: per-repo aliased query, decode, and the selection
 //! filter (port of `branches-graphql.ts`). A branch "qualifies" as a prompt when
-//! it is the user's own recent work that isn't the default branch and has no open
-//! PR yet — i.e. a nudge to open one.
+//! it is the user's own recent work that isn't the default branch and has never
+//! had an open or merged PR — i.e. a nudge to open one. (A branch whose PR was
+//! merged but not deleted must NOT be re-prompted; PRs closed without merging
+//! still prompt, since the work remains unmerged.)
 
 use serde::Deserialize;
 
@@ -30,7 +32,7 @@ const REFS_PER_REPO: usize = 100;
 
 fn repo_fields() -> String {
     format!(
-        "nameWithOwner url\n  defaultBranchRef {{ name target {{ oid }} }}\n  refs(refPrefix: \"refs/heads/\", first: {REFS_PER_REPO}, orderBy: {{field: TAG_COMMIT_DATE, direction: DESC}}) {{\n    nodes {{\n      name\n      associatedPullRequests(states: OPEN, first: 1) {{ totalCount }}\n      target {{ ... on Commit {{\n        oid committedDate messageHeadline\n        author {{ user {{ login }} }}\n        committer {{ user {{ login }} }}\n      }} }}\n    }}\n  }}"
+        "nameWithOwner url\n  defaultBranchRef {{ name target {{ oid }} }}\n  refs(refPrefix: \"refs/heads/\", first: {REFS_PER_REPO}, orderBy: {{field: TAG_COMMIT_DATE, direction: DESC}}) {{\n    nodes {{\n      name\n      associatedPullRequests(states: [OPEN, MERGED], first: 1) {{ totalCount }}\n      target {{ ... on Commit {{\n        oid committedDate messageHeadline\n        author {{ user {{ login }} }}\n        committer {{ user {{ login }} }}\n      }} }}\n    }}\n  }}"
     )
 }
 
@@ -181,7 +183,7 @@ fn reject_reason(node: &GqlRefNode, ctx: &FilterCtx) -> Option<&'static str> {
         return Some("is default branch");
     }
     if node.associated_pull_requests.total_count > 0 {
-        return Some("has open PR");
+        return Some("has open/merged PR");
     }
     if ctx.default_oid == Some(oid) {
         return Some("head == default-branch head (no new commits)");
