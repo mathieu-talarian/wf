@@ -51,7 +51,7 @@ impl TokenCipher {
     /// Encrypts `plaintext`, returning a fresh random IV and the detached tag.
     pub fn seal(&self, plaintext: &str) -> Result<Sealed, CryptoError> {
         let mut iv = [0u8; IV_BYTES];
-        getrandom::getrandom(&mut iv).map_err(|e| CryptoError::Seal(e.to_string()))?;
+        getrandom::fill(&mut iv).map_err(|e| CryptoError::Seal(e.to_string()))?;
         let nonce = Nonce::from_slice(&iv);
 
         let mut buf = plaintext.as_bytes().to_vec();

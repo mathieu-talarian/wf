@@ -6,7 +6,7 @@ license.workspace = true
 
 [dependencies]
 wf-core = { workspace = true }
-sea-orm = { version = "1.1", default-features = false, features = [
+sea-orm = { version = "2.0.0-rc.40", default-features = false, features = [
     "sqlx-postgres",
     "runtime-tokio-rustls",
     "macros",
@@ -15,9 +15,9 @@ sea-orm = { version = "1.1", default-features = false, features = [
     "with-uuid",
 ] }
 # Pinned to the same minor SeaORM depends on, so the PgPool type unifies.
-sqlx = { version = "0.8", default-features = false, features = [
+sqlx = { version = "0.9", default-features = false, features = [
     "postgres",
-    "runtime-tokio-rustls",
+    "runtime-tokio",
 ] }
 thiserror = { workspace = true }
 tracing = { workspace = true }
