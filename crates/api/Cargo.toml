@@ -8,8 +8,14 @@ license.workspace = true
 name = "wf-api"
 path = "src/main.rs"
 
+[lints]
+workspace = true
+
 [dependencies]
 wf-core = { workspace = true }
+wf-db = { workspace = true }
+wf-github = { workspace = true }
+wf-jira = { workspace = true }
 
 actix-web = { workspace = true }
 actix-cors = { workspace = true }
@@ -24,3 +30,20 @@ chrono = { workspace = true }
 
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+
+# Auth: JWKS fetch + JWT verification (migration plan §7).
+reqwest = { workspace = true }
+jsonwebtoken = { workspace = true }
+sea-orm = { workspace = true }
+tokio = { workspace = true }
+dotenvy = { workspace = true }
+
+# OpenAPI (Phase 5a)
+utoipa = { workspace = true, features = ["actix_extras"] }
+
+# OpenTelemetry (spec §12)
+opentelemetry = { workspace = true }
+opentelemetry_sdk = { workspace = true }
+opentelemetry-otlp = { workspace = true }
+opentelemetry-appender-tracing = { workspace = true }
+tracing-opentelemetry = { workspace = true }

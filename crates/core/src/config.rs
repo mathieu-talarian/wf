@@ -77,58 +77,16 @@ impl Config {
     /// schema: optional vars get defaults, required vars must be present and
     /// non-empty, `PORT` is a positive integer, `CORS_ORIGINS` is CSV.
     pub fn from_map(map: &HashMap<String, String>) -> Result<Self, ConfigError> {
-        let port = match present(map, "PORT") {
-            None => DEFAULT_PORT,
-            Some(raw) => raw
-                .parse::<u16>()
-                .ok()
-                .filter(|n| *n > 0)
-                .ok_or_else(|| {
-                    ConfigError::Invalid(format!("PORT must be a positive integer, got {raw:?}"))
-                })?,
-        };
-
         let cors_origins = match present(map, "CORS_ORIGINS") {
             None => vec![DEFAULT_CORS_ORIGIN.to_string()],
             Some(raw) => parse_csv(&raw),
         };
 
-        let node_env = match present(map, "NODE_ENV") {
-            None => NodeEnv::Development,
-            Some(raw) => match raw.as_str() {
-                "development" => NodeEnv::Development,
-                "production" => NodeEnv::Production,
-                "test" => NodeEnv::Test,
-                other => {
-                    return Err(ConfigError::Invalid(format!(
-                        "NODE_ENV must be development|production|test, got {other:?}"
-                    )))
-                }
-            },
-        };
-
-        let log_level = match present(map, "LOG_LEVEL") {
-            None => LogLevel::Info,
-            Some(raw) => match raw.as_str() {
-                "trace" => LogLevel::Trace,
-                "debug" => LogLevel::Debug,
-                "info" => LogLevel::Info,
-                "warning" => LogLevel::Warning,
-                "error" => LogLevel::Error,
-                "fatal" => LogLevel::Fatal,
-                other => {
-                    return Err(ConfigError::Invalid(format!(
-                        "LOG_LEVEL must be one of trace|debug|info|warning|error|fatal, got {other:?}"
-                    )))
-                }
-            },
-        };
-
         Ok(Config {
-            port,
+            port: parse_port(map)?,
             cors_origins,
-            node_env,
-            log_level,
+            node_env: parse_node_env(map)?,
+            log_level: parse_log_level(map)?,
             otel_service_name: present(map, "OTEL_SERVICE_NAME")
                 .unwrap_or_else(|| DEFAULT_OTEL_SERVICE_NAME.to_string()),
             otel_exporter_otlp_endpoint: present(map, "OTEL_EXPORTER_OTLP_ENDPOINT"),
@@ -151,6 +109,53 @@ impl Config {
         raw.try_into().map_err(|_| {
             ConfigError::Invalid("GITHUB_TOKEN_ENCRYPTION_KEY must decode to 32 bytes".to_string())
         })
+    }
+}
+
+/// Parses `PORT`: defaults to [`DEFAULT_PORT`], else must be a positive integer.
+fn parse_port(map: &HashMap<String, String>) -> Result<u16, ConfigError> {
+    match present(map, "PORT") {
+        None => Ok(DEFAULT_PORT),
+        Some(raw) => raw
+            .parse::<u16>()
+            .ok()
+            .filter(|n| *n > 0)
+            .ok_or_else(|| {
+                ConfigError::Invalid(format!("PORT must be a positive integer, got {raw:?}"))
+            }),
+    }
+}
+
+/// Parses `NODE_ENV`: defaults to `Development`, else one of development|production|test.
+fn parse_node_env(map: &HashMap<String, String>) -> Result<NodeEnv, ConfigError> {
+    match present(map, "NODE_ENV") {
+        None => Ok(NodeEnv::Development),
+        Some(raw) => match raw.as_str() {
+            "development" => Ok(NodeEnv::Development),
+            "production" => Ok(NodeEnv::Production),
+            "test" => Ok(NodeEnv::Test),
+            other => Err(ConfigError::Invalid(format!(
+                "NODE_ENV must be development|production|test, got {other:?}"
+            ))),
+        },
+    }
+}
+
+/// Parses `LOG_LEVEL`: defaults to `Info`, else one of the logtape level names.
+fn parse_log_level(map: &HashMap<String, String>) -> Result<LogLevel, ConfigError> {
+    match present(map, "LOG_LEVEL") {
+        None => Ok(LogLevel::Info),
+        Some(raw) => match raw.as_str() {
+            "trace" => Ok(LogLevel::Trace),
+            "debug" => Ok(LogLevel::Debug),
+            "info" => Ok(LogLevel::Info),
+            "warning" => Ok(LogLevel::Warning),
+            "error" => Ok(LogLevel::Error),
+            "fatal" => Ok(LogLevel::Fatal),
+            other => Err(ConfigError::Invalid(format!(
+                "LOG_LEVEL must be one of trace|debug|info|warning|error|fatal, got {other:?}"
+            ))),
+        },
     }
 }
 

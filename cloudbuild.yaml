@@ -1,0 +1,91 @@
+substitutions:
+  _AR_REPOSITORY: "workflow-backend"
+  _COLLECTOR_CONFIG_SECRET: "wf-otel-collector-config"
+  _REGION: "europe-west1"
+  _SERVICE_NAME: "workflow-backend"
+  # GCS bucket for the sccache Rust compiler cache. Empty => sccache uses a
+  # local (per-build, throwaway) cache, so the build still works without it.
+  _SCCACHE_BUCKET: "workflow-497713-wf-sccache"
+  # --- Non-secret app config rendered into service.yaml. Override per env at
+  # submit time, e.g. --substitutions=_SUPABASE_URL=https://xxx.supabase.co,...
+  # (DATABASE_URL and GITHUB_TOKEN_ENCRYPTION_KEY are NOT here — they come from
+  # Secret Manager; see service.yaml / deploy/terraform.)
+  _SUPABASE_URL: ""
+  _SUPABASE_JWT_AUDIENCE: "authenticated"
+  _CORS_ORIGINS: ""
+  _WEB_APP_URL: ""
+
+options:
+  substitutionOption: ALLOW_LOOSE
+
+steps:
+  - id: build-push-app-image
+    name: gcr.io/cloud-builders/docker
+    entrypoint: bash
+    args:
+      - -ceu
+      - |
+        APP_IMAGE="${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPOSITORY}/${_SERVICE_NAME}:${BUILD_ID}"
+        CACHE_IMAGE="${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPOSITORY}/${_SERVICE_NAME}-cache:buildcache"
+
+        # The docker-container driver is required to export build cache to a
+        # registry (--cache-to). `--driver-opt network=cloudbuild` attaches the
+        # BuildKit container to Cloud Build's `cloudbuild` Docker network, the only
+        # one that can reach the spoofed metadata server which serves THIS
+        # project's build service-account token — so RUN steps (which inherit that
+        # network) let sccache authenticate to GCS as the build SA, no key file.
+        docker buildx create --use --name builder \
+          --driver docker-container \
+          --driver-opt network=cloudbuild
+
+        # --add-host is the other half of the auth dance: the cloudbuild network
+        # routes to the metadata IP, but its embedded DNS doesn't map
+        # metadata.google.internal, and the GCP cred libs resolve the hostname
+        # (not the IP). mode=max caches intermediate stages too (the cargo-chef
+        # cook layer); image-manifest keeps the cache AR-compatible.
+        # --provenance=false keeps a single-manifest image for Cloud Run.
+        docker buildx build \
+          --builder builder \
+          --build-arg "SCCACHE_GCS_BUCKET=${_SCCACHE_BUCKET}" \
+          --add-host metadata.google.internal:169.254.169.254 \
+          --cache-from "type=registry,ref=$${CACHE_IMAGE}" \
+          --cache-to "type=registry,ref=$${CACHE_IMAGE},mode=max,image-manifest=true" \
+          --tag "$${APP_IMAGE}" \
+          --push \
+          --provenance=false \
+          .
+
+  - id: render-service-yaml
+    name: gcr.io/google.com/cloudsdktool/google-cloud-cli:slim
+    entrypoint: bash
+    args:
+      - -ceu
+      - |
+        APP_IMAGE="${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPOSITORY}/${_SERVICE_NAME}:${BUILD_ID}"
+        sed \
+          -e "s|__APP_IMAGE__|$${APP_IMAGE}|g" \
+          -e "s|__PROJECT_ID__|${PROJECT_ID}|g" \
+          -e "s|__SERVICE_NAME__|${_SERVICE_NAME}|g" \
+          -e "s|__COLLECTOR_CONFIG_SECRET__|${_COLLECTOR_CONFIG_SECRET}|g" \
+          -e "s|__SUPABASE_URL__|${_SUPABASE_URL}|g" \
+          -e "s|__SUPABASE_JWT_AUDIENCE__|${_SUPABASE_JWT_AUDIENCE}|g" \
+          -e "s|__CORS_ORIGINS__|${_CORS_ORIGINS}|g" \
+          -e "s|__WEB_APP_URL__|${_WEB_APP_URL}|g" \
+          service.yaml > /workspace/service.rendered.yaml
+
+  - id: deploy-cloud-run-service
+    name: gcr.io/google.com/cloudsdktool/google-cloud-cli:slim
+    entrypoint: bash
+    args:
+      - -ceu
+      - |
+        # Public access is declared in service.yaml via
+        # run.googleapis.com/invoker-iam-disabled, so no add-iam-policy-binding
+        # step is needed here (and the build SA needs no setIamPolicy permission).
+        gcloud run services replace /workspace/service.rendered.yaml \
+          --region=${_REGION} \
+          --project=${PROJECT_ID}
+
+# NOTE: no top-level `images:` block. `docker buildx --push` already pushes the
+# image, and with the docker-container driver the image is never loaded into the
+# local daemon, so an `images:` entry would fail at the end of the build.

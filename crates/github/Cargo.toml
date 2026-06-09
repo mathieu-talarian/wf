@@ -4,4 +4,18 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+futures = { workspace = true }
+percent-encoding = { workspace = true }
+serde_yaml = { workspace = true }
+base64 = { workspace = true }
+utoipa = { workspace = true }

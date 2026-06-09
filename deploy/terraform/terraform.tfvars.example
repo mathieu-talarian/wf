@@ -1,0 +1,11 @@
+project_id = "workflow-497713"
+region     = "europe-west1"
+
+# Keep these aligned with cloudbuild.yaml substitutions unless you override them
+# in both places.
+artifact_registry_repository_id = "workflow-backend"
+collector_config_secret_id      = "wf-otel-collector-config"
+
+# App secret container IDs (values are populated out-of-band, not by Terraform).
+database_url_secret_id                 = "wf-database-url"
+github_token_encryption_key_secret_id  = "wf-github-token-encryption-key"

@@ -4,26 +4,29 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
 wf-core = { workspace = true }
-sea-orm = { version = "1.1", default-features = false, features = [
-    "sqlx-postgres",
-    "runtime-tokio-rustls",
-    "macros",
-    "with-chrono",
-    "with-json",
-    "with-uuid",
-] }
+sea-orm = { workspace = true }
 # Pinned to the same minor SeaORM depends on, so the PgPool type unifies.
-sqlx = { version = "0.8", default-features = false, features = [
+sqlx = { version = "0.9.0", default-features = false, features = [
     "postgres",
-    "runtime-tokio-rustls",
+    "runtime-tokio",
+    "tls-rustls-ring",
 ] }
 thiserror = { workspace = true }
 tracing = { workspace = true }
+chrono = { workspace = true }
+serde_json = { workspace = true }
 
 [dev-dependencies]
-# Phase 0 spike harness (examples/phase0.rs).
+# Phase 0 spike harness + GitHub live-validate example.
 tokio = { workspace = true }
 anyhow = { workspace = true }
 base64 = { workspace = true }
+wf-github = { workspace = true }
+dotenvy = { workspace = true }
+tracing-subscriber = { workspace = true }
+reqwest = { workspace = true }
