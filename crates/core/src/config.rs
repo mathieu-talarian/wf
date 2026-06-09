@@ -58,6 +58,11 @@ pub struct Config {
     pub supabase_jwt_audience: String,
     pub web_app_url: String,
     pub github_token_encryption_key: String,
+    pub poll_interval_secs: u64,
+    pub tick_batch_size: u64,
+    pub tick_budget_ms: u64,
+    pub tick_lease_secs: u64,
+    pub internal_tick_token: String,
 }
 
 const DEFAULT_PORT: u16 = 3000;
@@ -97,6 +102,11 @@ impl Config {
             web_app_url: present(map, "WEB_APP_URL")
                 .unwrap_or_else(|| DEFAULT_WEB_APP_URL.to_string()),
             github_token_encryption_key: required(map, "GITHUB_TOKEN_ENCRYPTION_KEY")?,
+            poll_interval_secs: parse_u64(map, "POLL_INTERVAL_SECS", 120)?,
+            tick_batch_size: parse_u64(map, "TICK_BATCH_SIZE", 50)?,
+            tick_budget_ms: parse_u64(map, "TICK_BUDGET_MS", 30_000)?,
+            tick_lease_secs: parse_u64(map, "TICK_LEASE_SECS", 90)?,
+            internal_tick_token: required(map, "INTERNAL_TICK_TOKEN")?,
         })
     }
 
@@ -123,6 +133,16 @@ fn parse_port(map: &HashMap<String, String>) -> Result<u16, ConfigError> {
             .ok_or_else(|| {
                 ConfigError::Invalid(format!("PORT must be a positive integer, got {raw:?}"))
             }),
+    }
+}
+
+/// Parses an optional positive-integer env var with a default.
+fn parse_u64(map: &HashMap<String, String>, key: &str, default: u64) -> Result<u64, ConfigError> {
+    match present(map, key) {
+        None => Ok(default),
+        Some(raw) => raw.parse::<u64>().map_err(|_| {
+            ConfigError::Invalid(format!("{key} must be a positive integer"))
+        }),
     }
 }
 
@@ -189,6 +209,7 @@ mod tests {
         m.insert("SUPABASE_URL".into(), "https://proj.supabase.co".into());
         // 32 zero bytes, base64-encoded.
         m.insert("GITHUB_TOKEN_ENCRYPTION_KEY".into(), "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=".into());
+        m.insert("INTERNAL_TICK_TOKEN".into(), "secret".into());
         m
     }
 
@@ -233,6 +254,30 @@ mod tests {
             m.insert("PORT".into(), bad.into());
             assert!(Config::from_map(&m).is_err(), "expected {bad} to fail");
         }
+    }
+
+    #[test]
+    fn tick_config_defaults() {
+        let env = base();
+        let cfg = Config::from_map(&env).unwrap();
+        assert_eq!(cfg.poll_interval_secs, 120);
+        assert_eq!(cfg.tick_batch_size, 50);
+        assert_eq!(cfg.tick_budget_ms, 30_000);
+        assert_eq!(cfg.tick_lease_secs, 90);
+        assert_eq!(cfg.internal_tick_token, "secret");
+    }
+
+    #[test]
+    fn tick_config_overrides_and_required_token() {
+        let mut env = base();
+        env.insert("INTERNAL_TICK_TOKEN".into(), "s".into());
+        env.insert("POLL_INTERVAL_SECS".into(), "30".into());
+        assert_eq!(Config::from_map(&env).unwrap().poll_interval_secs, 30);
+        env.insert("POLL_INTERVAL_SECS".into(), "abc".into());
+        assert!(Config::from_map(&env).is_err());
+        let mut no_token = base();
+        no_token.remove("INTERNAL_TICK_TOKEN");
+        assert!(Config::from_map(&no_token).is_err());
     }
 
     #[test]
