@@ -140,9 +140,13 @@ fn parse_port(map: &HashMap<String, String>) -> Result<u16, ConfigError> {
 fn parse_u64(map: &HashMap<String, String>, key: &str, default: u64) -> Result<u64, ConfigError> {
     match present(map, key) {
         None => Ok(default),
-        Some(raw) => raw.parse::<u64>().map_err(|_| {
-            ConfigError::Invalid(format!("{key} must be a positive integer"))
-        }),
+        Some(raw) => raw
+            .parse::<u64>()
+            .ok()
+            .filter(|n| *n > 0)
+            .ok_or_else(|| {
+                ConfigError::Invalid(format!("{key} must be a positive integer"))
+            }),
     }
 }
 
@@ -274,6 +278,8 @@ mod tests {
         env.insert("POLL_INTERVAL_SECS".into(), "30".into());
         assert_eq!(Config::from_map(&env).unwrap().poll_interval_secs, 30);
         env.insert("POLL_INTERVAL_SECS".into(), "abc".into());
+        assert!(Config::from_map(&env).is_err());
+        env.insert("POLL_INTERVAL_SECS".into(), "0".into());
         assert!(Config::from_map(&env).is_err());
         let mut no_token = base();
         no_token.remove("INTERNAL_TICK_TOKEN");
