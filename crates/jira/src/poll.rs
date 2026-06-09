@@ -79,6 +79,7 @@ pub async fn fetch_recent_issues(
 fn to_polled(site_url: &str, raw: RawPollIssue) -> PolledIssue {
     let status = raw.fields.status;
     PolledIssue {
+        // site_url is a normalized origin (no trailing slash) — see site_url.rs
         url: format!("{site_url}/browse/{}", raw.key),
         key: raw.key,
         summary: raw.fields.summary,
@@ -97,7 +98,7 @@ fn to_polled(site_url: &str, raw: RawPollIssue) -> PolledIssue {
 mod tests {
     use super::*;
     use crate::client::JiraCreds;
-    use wiremock::matchers::{method, path};
+    use wiremock::matchers::{body_json, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     #[test]
@@ -107,27 +108,16 @@ mod tests {
 
     #[tokio::test]
     async fn parses_poll_page() {
+        let fixture = serde_json::json!({ "issues": [{"key": "PROJ-1", "fields": {"summary": "Fix login", "status": { "id": "3", "name": "In Progress", "statusCategory": { "key": "indeterminate" }}, "created": "2026-06-01T10:00:00.000+0200", "updated": "2026-06-02T11:00:00.000+0200"}}]});
+        let expected = serde_json::json!({"jql": "project = \"PROJ\" ORDER BY updated DESC", "maxResults": 50, "fields": ["summary", "status", "created", "updated"]});
         let server = MockServer::start().await;
-        let fixture = serde_json::json!({ "issues": [{
-            "key": "PROJ-1",
-            "fields": {
-                "summary": "Fix login",
-                "status": { "id": "3", "name": "In Progress",
-                            "statusCategory": { "key": "indeterminate" } },
-                "created": "2026-06-01T10:00:00.000+0200",
-                "updated": "2026-06-02T11:00:00.000+0200"
-            }
-        }]});
         Mock::given(method("POST"))
             .and(path("/rest/api/3/search/jql"))
+            .and(body_json(&expected))
             .respond_with(ResponseTemplate::new(200).set_body_json(fixture))
             .mount(&server)
             .await;
-        let creds = JiraCreds {
-            site_url: server.uri(),
-            email: "e@x.com".into(),
-            token: "t".into(),
-        };
+        let creds = JiraCreds { site_url: server.uri(), email: "e@x.com".into(), token: "t".into() };
         let issues = fetch_recent_issues(&JiraClient::new(&creds), "PROJ").await.unwrap();
         assert_eq!(issues[0].key, "PROJ-1");
         assert_eq!(issues[0].status_id.as_deref(), Some("3"));
