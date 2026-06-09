@@ -3,3 +3,4 @@
 //! `wf-worker` (roadmap Approach 2) share the exact same logic.
 
 pub mod cursor;
+pub mod normalize;

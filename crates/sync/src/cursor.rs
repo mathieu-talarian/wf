@@ -49,6 +49,8 @@ impl JiraCursor {
         let (Some(a), Some(b)) = (parse_jira_ts(&self.updated), parse_jira_ts(updated)) else {
             return false;
         };
+        // Lexicographic key order is intentional: the cursor only needs an ordering CONSISTENT
+        // between filter and max-advance (dedup backstops re-emits); do not "fix" to numeric.
         b > a || (b == a && key > self.issue_key.as_str())
     }
 }

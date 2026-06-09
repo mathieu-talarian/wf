@@ -25,3 +25,4 @@ tokio = { workspace = true }
 wiremock = "0.6"
 dotenvy = { workspace = true }
 anyhow = { workspace = true }
+uuid = { version = "1", features = ["v4"] }
