@@ -6,6 +6,7 @@ pub mod activity;
 pub mod client;
 pub mod dashboard;
 pub mod errors;
+pub mod poll;
 pub mod types;
 pub mod validate;
 
@@ -17,6 +18,7 @@ pub use activity::{
     GithubWorkflowInputType, GithubWorkflowInputs, GithubWorkflowSummary,
 };
 pub use client::{parse_repo_ref, GithubClient, RepoRef};
+pub use poll::{list_pulls_page, list_workflow_runs_page, GithubActor, PolledPullRequest, PolledWorkflowRun};
 pub use dashboard::enrich::{enrich_pull_request, enrich_pull_requests};
 pub use dashboard::types::{
     GithubAccountSummary, GithubApprovalState, GithubCheckState, GithubDashboard,

@@ -19,3 +19,8 @@ percent-encoding = { workspace = true }
 serde_yaml = { workspace = true }
 base64 = { workspace = true }
 utoipa = { workspace = true }
+
+[dev-dependencies]
+wiremock = "0.6"
+tokio = { workspace = true }
+serde_json = { workspace = true }

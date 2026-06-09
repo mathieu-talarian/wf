@@ -34,14 +34,17 @@ pub fn parse_repo_ref(repository_url: &str) -> Option<RepoRef> {
 pub struct GithubClient {
     http: reqwest::Client,
     token: String,
+    base: String,
 }
 
 impl GithubClient {
     pub fn new(token: impl Into<String>) -> Self {
-        Self {
-            http: reqwest::Client::new(),
-            token: token.into(),
-        }
+        Self::with_base(token, REST_BASE)
+    }
+
+    /// Test seam: point REST calls at a mock server (A1 §9).
+    pub fn with_base(token: impl Into<String>, base: impl Into<String>) -> Self {
+        Self { http: reqwest::Client::new(), token: token.into(), base: base.into() }
     }
 
     pub fn token(&self) -> &str {
@@ -51,7 +54,7 @@ impl GithubClient {
     /// Builds a request with the standard GitHub REST headers.
     pub fn request(&self, method: Method, path: &str) -> RequestBuilder {
         self.http
-            .request(method, format!("{REST_BASE}{path}"))
+            .request(method, format!("{}{path}", self.base))
             .header(AUTHORIZATION, format!("Bearer {}", self.token))
             .header(USER_AGENT, USER_AGENT_VALUE)
             .header(ACCEPT, "application/vnd.github+json")
