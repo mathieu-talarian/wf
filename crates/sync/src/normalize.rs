@@ -197,6 +197,17 @@ mod tests {
         );
     }
 
+    #[test]
+    fn closed_pr_without_closed_at_falls_back_to_updated_at() {
+        // When a closed, unmerged PR has no closed_at, occurred_at must equal updated_at.
+        let uid = Uuid::new_v4();
+        let mut no_close = pr("closed", false);
+        no_close.closed_at = None;
+        let ev = pull_request_event(uid, "o/r", &no_close).unwrap();
+        let expected = Utc.timestamp_opt(300, 0).unwrap().fixed_offset();
+        assert_eq!(ev.occurred_at, expected);
+    }
+
     fn issue(status_id: &str) -> PolledIssue {
         PolledIssue {
             key: "PROJ-1".into(),

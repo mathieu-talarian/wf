@@ -4,3 +4,6 @@
 
 pub mod cursor;
 pub mod normalize;
+pub mod tick;
+
+pub use tick::{run_tick, TickError, TickOptions, TickSummary};
