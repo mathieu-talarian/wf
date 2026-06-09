@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/core", "crates/db", "crates/github", "crates/jira", "crates/api", "crates/migration"]
+members = ["crates/core", "crates/db", "crates/github", "crates/jira", "crates/api", "crates/migration", "crates/sync"]
 
 [workspace.package]
 version = "0.1.0"
@@ -19,6 +19,7 @@ wf-core = { path = "crates/core" }
 wf-db = { path = "crates/db" }
 wf-github = { path = "crates/github" }
 wf-jira = { path = "crates/jira" }
+wf-sync = { path = "crates/sync" }
 
 # HTTP server
 actix-web = "4"

@@ -1,0 +1,27 @@
+[package]
+name = "wf-sync"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+wf-core = { workspace = true }
+wf-db = { workspace = true }
+wf-github = { workspace = true }
+wf-jira = { workspace = true }
+sea-orm = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+url = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
+wiremock = "0.6"
+dotenvy = { workspace = true }
+anyhow = { workspace = true }
