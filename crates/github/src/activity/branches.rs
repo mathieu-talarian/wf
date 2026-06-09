@@ -1,6 +1,6 @@
-//! Branch→PR prompts (port of `branches.ts`): a batched, per-repo GraphQL sweep
-//! that never fails the whole call — inaccessible repos surface as an `error`
-//! string in their own entry. Plus the plain REST branch-name list.
+//! Branch→PR prompts (port of `branches.ts`): a per-repo GraphQL sweep run
+//! concurrently, that never fails the whole call — inaccessible repos surface
+//! as an `error` string in their own entry. Plus the plain REST branch-name list.
 
 use futures::future::join_all;
 use reqwest::Method;
@@ -13,7 +13,14 @@ use super::types::GithubRepoBranches;
 use crate::client::{GithubClient, RepoRef};
 use crate::errors::GithubError;
 
-const REPO_BATCH: usize = 20;
+// One repo per GraphQL query. Each repo requests `refs(first: 100)` with a
+// nested `target` commit (+ author/committer user) and `associatedPullRequests`,
+// ordered by commit date — expensive enough that batching multiple repos into
+// one query trips GitHub's runtime guard (`RESOURCE_LIMITS_EXCEEDED`), which
+// nulls every repo's `refs` and makes the whole feature return empty. Keeping
+// each query single-repo stays under the limit; the queries still run
+// concurrently via `join_all` over the chunks below.
+const REPO_BATCH: usize = 1;
 const WINDOW_DAYS: i64 = 30;
 
 fn error_repo(coord: &RepoCoord, message: &str) -> GithubRepoBranches {
@@ -63,6 +70,19 @@ async fn graphql_data(
         return None;
     }
     let mut payload: serde_json::Value = resp.json().await.ok()?;
+    // A 200 with a non-empty `errors` array means GitHub returned PARTIAL data:
+    // some fields were nulled (e.g. `refs` on `RESOURCE_LIMITS_EXCEEDED`). We
+    // still use whatever `data` survived, but surface the errors — silently
+    // dropping them once turned a too-expensive query into an empty branch list
+    // with no signal at all.
+    if let Some(errors) = payload.get("errors").filter(|e| e.as_array().is_some_and(|a| !a.is_empty()))
+    {
+        tracing::warn!(
+            target: "branch_prompts",
+            errors = %errors,
+            "GraphQL returned partial data with errors (branch refs may be missing)"
+        );
+    }
     Some(payload.get_mut("data").map(serde_json::Value::take).unwrap_or(serde_json::Value::Null))
 }
 
@@ -94,8 +114,7 @@ pub async fn fetch_branch_prompts(
     repos: &[String],
 ) -> Vec<GithubRepoBranches> {
     let coords: Vec<RepoCoord> = repos.iter().filter_map(|r| to_coord(r)).collect();
-    // DIAGNOSTIC (temporary): record the inputs that drive the whole sweep.
-    tracing::info!(
+    tracing::debug!(
         target: "branch_prompts",
         login,
         selected_repos = repos.len(),

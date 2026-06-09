@@ -28,3 +28,5 @@ anyhow = { workspace = true }
 base64 = { workspace = true }
 wf-github = { workspace = true }
 dotenvy = { workspace = true }
+tracing-subscriber = { workspace = true }
+reqwest = { workspace = true }

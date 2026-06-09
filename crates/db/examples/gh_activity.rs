@@ -16,6 +16,13 @@ use wf_github::{
 #[tokio::main]
 async fn main() -> Result<()> {
     let _ = dotenvy::dotenv();
+    // Optional: set `RUST_LOG=branch_prompts=debug` to see per-branch decisions.
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "warn".into()),
+        )
+        .init();
     let db = connect(&std::env::var("DATABASE_URL")?, ConnectOptions::default()).await?;
     let row = gh::Entity::find().one(&db).await?.context("no PAT row")?;
     let token = decrypt_token(&row)?;

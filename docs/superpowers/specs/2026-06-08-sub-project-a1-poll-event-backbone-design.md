@@ -14,7 +14,9 @@ table, populated by a **wake-up / tick** poller that runs whatever is due and
 exits (Cloud Run scale-to-zero safe). This is the foundation that unblocks
 sub-project B (realtime/cursor delivery) and sub-project C (unified feed + rules
 engine). Everything here works with **every** connection regardless of PAT
-scopes, because it relies only on the same read APIs the dashboard already calls.
+scopes, because it relies only on the same provider read permissions the
+dashboard already uses. A1 may add new read helpers, but not new privileged
+provider scopes.
 
 ## 2. Decisions locked during brainstorming
 
@@ -48,7 +50,7 @@ Both tables follow the project convention: one directory per table under
 | `user_id` | uuid | FK → `users.id` ON DELETE CASCADE |
 | `source` | text | `github` \| `jira` |
 | `type` | text | e.g. `github.workflow_run.completed`, `github.pull_request.merged`, `jira.issue.transitioned` |
-| `external_id` | text | stable dedup key encoding entity + state (§6) |
+| `external_id` | text | stable per-user dedup key encoding provider instance + entity + state (§6) |
 | `scope_key` | text | repo full-name (`owner/repo`) or Jira project key |
 | `actor` | text | nullable — login / display name |
 | `title` | text | nullable — human summary |
@@ -58,8 +60,9 @@ Both tables follow the project convention: one directory per table under
 | `ingested_at` | timestamptz | default `now()` |
 
 **Indexes**
-- `UNIQUE (source, external_id)` — dedup safety net (poll re-runs, and later
-  webhook-vs-poll convergence in A2).
+- `UNIQUE (user_id, source, external_id)` — dedup safety net (poll re-runs, and
+  later webhook-vs-poll convergence in A2) without dropping another user's copy
+  of the same repo/project event.
 - `(user_id, id)` — cursor paging for the feed / `?since=`.
 - `(user_id, scope_key, id)` — filtered feed by repo/project.
 
@@ -78,6 +81,8 @@ One row per pollable scope (a scope = one entity kind within one repo/project).
 | `next_poll_at` | timestamptz | not null, default `now()` — drives tick selection |
 | `consecutive_errors` | int | default 0 — backoff input |
 | `last_error` | text | nullable |
+| `lease_owner` | text | nullable — tick instance that claimed the row |
+| `lease_until` | timestamptz | nullable — expires abandoned claims |
 
 PK = `(user_id, source, scope_key, entity_kind)`.
 
@@ -99,15 +104,21 @@ documented hardening path; not in A1.)*
 1. **Reconcile scopes** — ensure `sync_state` holds exactly one row per
    `(selected scope × entity_kind)` per connection: insert missing rows with
    `next_poll_at = now()`, delete rows for de-selected scopes.
-2. **Select due** — `SELECT … FROM sync_state WHERE next_poll_at <= now()
-   ORDER BY next_poll_at LIMIT <batch>`.
+2. **Claim due** — atomically lease rows with expired/no lease:
+   `WITH due AS (SELECT user_id, source, scope_key, entity_kind FROM sync_state
+   WHERE next_poll_at <= now() AND (lease_until IS NULL OR lease_until < now())
+   ORDER BY next_poll_at LIMIT <batch> FOR UPDATE SKIP LOCKED) UPDATE
+   sync_state ... SET lease_owner, lease_until = now() + <lease_ttl> ...
+   RETURNING *`.
 3. **Poll each** — load connection, decrypt PAT via the existing
    `wf_core` `TokenCipher`, call the matching `wf-github` / `wf-jira` read,
    **diff against `cursor`**, normalize new items (§5), insert
-   `ON CONFLICT (source, external_id) DO NOTHING`.
+   `ON CONFLICT (user_id, source, external_id) DO NOTHING`.
 4. **Advance** — set `cursor`, `last_polled_at = now()`,
    `next_poll_at = now() + interval` (exponential backoff using
-   `consecutive_errors` on failure), update `last_error` / reset on success.
+   `consecutive_errors` on failure), clear the lease, update `last_error` /
+   reset on success. Updates include the lease owner in the `WHERE` clause so a
+   stale tick cannot overwrite a row re-claimed after lease expiry.
 5. **Stay bounded** — stop at the batch count **or** a wall-clock budget,
    whichever first; remaining due scopes wait for the next tick.
 
@@ -136,9 +147,14 @@ Scoped to each connection's existing `selected_repos` / `selected_projects`.
 
 | source | entity_kind | emitted `type`s | read API |
 |---|---|---|---|
-| github | `workflow_run` | `github.workflow_run.completed` (success/failure) | `wf_github::list_workflow_runs` |
-| github | `pull_request` | `github.pull_request.opened` / `.merged` / `.closed` | dashboard PR fetch (`wf_github::fetch_dashboard` / queue pulls) |
-| jira | `issue` | `jira.issue.created`, `jira.issue.transitioned` (status change) | `wf_jira::fetch_issue_page` with `updated >= cursor` JQL |
+| github | `workflow_run` | `github.workflow_run.completed` (success/failure) | **new** repo-level delta helper over `/repos/{owner}/{repo}/actions/runs` |
+| github | `pull_request` | `github.pull_request.opened` / `.merged` / `.closed` | **new** PR delta helper; do not use dashboard queues |
+| jira | `issue` | `jira.issue.created`, `jira.issue.transitioned` (status change) | **new** issue delta helper using selected-project JQL |
+
+The existing GitHub dashboard APIs are intentionally not the poller contract:
+they are user-queue shaped and open-PR-only. A1 adds poller-specific reads that
+return stable provider ids, state, created/closed/merged/status timestamps, and
+updated watermarks.
 
 **Deferred (post-A1, trivial to add):** PR review/check-state churn, Jira
 comments, pushes/branches.
@@ -150,24 +166,40 @@ A normalizer per `(source, entity_kind)` maps a provider item → an `events` ro
 Normalizers are pure functions (provider DTO → `Event`), making them unit-testable
 from fixtures.
 
+Jira issue deltas must request enough fields for the vocabulary:
+`summary`, `status.id`, `status.name`, `status.statusCategory`, `created`,
+`updated`, `project`, and a stable issue id/key. For A1, `transitioned` means
+"status changed relative to the last ingested status for this issue"; if multiple
+Jira status changes happen between polls and the delta response does not include
+changelog history, A1 records the latest observed transition and does not promise
+every intermediate status.
+
 ## 6. Dedup & cursors
 
 ### 6.1 `external_id` (dedup key)
-Encodes **entity + state**, so re-polling an unchanged entity collides and is
-skipped, while a state change yields a new id (a new event). Proposed forms:
-- workflow run: `wfrun:{run_id}:{conclusion}`
-- pull request: `pr:{owner}/{repo}:{number}:{state}` (`state` ∈ open/merged/closed)
-- jira issue: `jira:{issueKey}:{statusId}` (created emits with the initial status)
+Encodes **provider instance + entity + state**, so re-polling an unchanged entity
+collides for the same user but never suppresses another user's event. Proposed
+forms:
+- workflow run: `repo:{owner}/{repo}:wfrun:{run_id}:{run_attempt}:{conclusion}`
+- pull request: `repo:{owner}/{repo}:pr:{number}:{state}` (`state` ∈ open/merged/closed)
+- jira issue created: `site:{site_or_cloud_id}:issue:{issueKey}:created`
+- jira status change: `site:{site_or_cloud_id}:issue:{issueKey}:status:{statusId}:updated:{updated}`
 
-The `UNIQUE (source, external_id)` index is the safety net; the cursor diff is the
-primary mechanism. This same key makes A2's webhook events converge with polled
-events for free.
+The `UNIQUE (user_id, source, external_id)` index is the safety net; the cursor
+diff is the primary mechanism. This same key makes A2's webhook events converge
+with polled events for free after the webhook receiver resolves the owning user /
+connection.
 
 ### 6.2 Cursors
-- GitHub: `updated_at` high-watermark per repo+kind; page until items fall at/under
-  the stored cursor.
-- Jira: `updated` high-watermark per project via `ORDER BY updated ASC` and
-  `updated >= cursor`.
+- Cursor values are JSON encoded in the `sync_state.cursor` text column.
+- GitHub: compound high-watermark per repo+kind, `{ "updated_at": "...",
+  "id": "..." }`, using provider id / node id as the tie-breaker.
+- Jira: compound high-watermark per project, `{ "updated": "...", "issue_key":
+  "..." }`, ordered by `updated ASC, key ASC`.
+- Provider APIs that cannot express the full compound predicate use an overlap
+  query on the provider update timestamp (for example, `updated >=
+  cursor.timestamp`) and client-side filtering of items at or below the stored
+  compound cursor. Dedup still protects replays.
 
 ## 7. Internal auth, migrations, config
 
@@ -185,6 +217,7 @@ events for free.
 | `POLL_INTERVAL_SECS` | 120 | base interval written into `next_poll_at` |
 | `TICK_BATCH_SIZE` | 50 | max scopes per tick |
 | `TICK_BUDGET_MS` | 30000 | wall-clock budget per tick |
+| `TICK_LEASE_SECS` | 90 | claim TTL for due `sync_state` rows |
 | `INTERNAL_TICK_TOKEN` | — (required) | shared secret for `/internal/tick` |
 
 ## 8. Error handling
@@ -194,7 +227,8 @@ events for free.
 - **Revoked / invalid PAT** — detected via the existing validation path; reuses
   the connection's `validation_status` field and pauses that connection's scopes
   (don't hammer a dead token).
-- **Partial tick** — safe by construction (idempotent steps, committed cursors).
+- **Partial tick** — safe by construction (idempotent steps, committed cursors);
+  abandoned leases expire and are claimable by a later tick.
 - Errors surface as structured logs/metrics via the existing telemetry
   middleware; `/internal/tick` returns a small JSON summary (scopes processed,
   events written, errors) for Scheduler logs.
@@ -203,10 +237,13 @@ events for free.
 
 - **Unit:** normalizers (fixture payload → `Event`); `external_id` stability
   across re-polls; cursor advance; backoff math; scope reconciliation from
-  `selected_repos` / `selected_projects`.
+  `selected_repos` / `selected_projects`; compound cursor tie handling; lease
+  claim/update guards.
 - **Integration:** drive the tick against **wiremock** GitHub/Jira endpoints
   serving fixtures → assert `events` rows; re-run the same tick → assert **no
-  duplicates** (dedup) and cursor advanced.
+  duplicates** (dedup) and cursor advanced; run two concurrent ticks over the
+  same due rows → assert each scope is processed once; seed two users watching
+  the same repo/project → assert both receive events.
 - **Live smoke:** `cargo run -p wf-db --example tick_smoke` (existing
   example-harness style; needs `.env` + a real connected user) — one tick,
   prints events written.
@@ -231,6 +268,10 @@ events for free.
 - New tables (per-table dirs): `crates/db/src/tables/events/`,
   `crates/db/src/tables/sync_state/`.
 - `wf-core`: config additions (§7.2).
+- `wf-github`: new poller-specific delta helpers for repo workflow runs and PRs
+  (separate from dashboard queue reads).
+- `wf-jira`: new poller-specific issue delta helper with created/status-id fields
+  and compound cursor ordering.
 - `wf-api`: `POST /internal/tick` route + handler; the shared tick routine
   (factored for the future worker); per-source pollers + normalizers (likely
   `crates/api/src/sync/…` reusing `wf-github` / `wf-jira` reads); opportunistic

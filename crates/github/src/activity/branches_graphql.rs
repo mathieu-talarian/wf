@@ -171,7 +171,7 @@ fn validated_commit(node: &GqlRefNode) -> Result<(&GqlCommit, &str, &str), &'sta
 
 /// Returns `None` when the branch qualifies as a PR prompt, otherwise
 /// `Some(reason)` naming the gate that rejected it. `select_branches` logs the
-/// reason per branch (DIAGNOSTIC) so we can see why the list comes back empty.
+/// reason per branch at debug so we can see why the list comes back empty.
 fn reject_reason(node: &GqlRefNode, ctx: &FilterCtx) -> Option<&'static str> {
     let (commit, committed_date, oid) = match validated_commit(node) {
         Ok(v) => v,
@@ -228,11 +228,12 @@ pub fn select_branches(repo: &GqlBranchRepo, login: &str, cutoff_ms: i64) -> Vec
     out
 }
 
-// DIAGNOSTIC (temporary): trace why the branch-prompt list comes back empty.
+// Per-branch DEBUG tracing: explains why each branch qualifies or is rejected.
+// Enable with `RUST_LOG=branch_prompts=debug` to diagnose an empty prompt list.
 
 /// Logs the per-repo scan header before filtering branches.
 fn log_scan(repo: &GqlBranchRepo, ctx: &FilterCtx, ref_count: usize) {
-    tracing::info!(
+    tracing::debug!(
         target: "branch_prompts",
         repo = repo.name_with_owner(),
         default_branch = ctx.default_branch,
@@ -246,17 +247,19 @@ fn log_scan(repo: &GqlBranchRepo, ctx: &FilterCtx, ref_count: usize) {
 
 /// Logs a branch that passed every gate.
 fn log_qualifies(repo: &GqlBranchRepo, node: &GqlRefNode) {
-    tracing::info!(
+    tracing::debug!(
         target: "branch_prompts",
         repo = repo.name_with_owner(),
         branch = %node.name,
+        author_login = node.target.as_ref().and_then(commit_login).unwrap_or("<null/none>"),
+        open_prs = node.associated_pull_requests.total_count,
         "QUALIFIES"
     );
 }
 
 /// Logs a rejected branch with the gate that rejected it and the relevant fields.
 fn log_rejected(repo: &GqlBranchRepo, node: &GqlRefNode, reason: &'static str) {
-    tracing::info!(
+    tracing::debug!(
         target: "branch_prompts",
         repo = repo.name_with_owner(),
         branch = %node.name,
