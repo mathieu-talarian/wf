@@ -32,3 +32,6 @@ pub use issues::writes::{
     add_comment, assign_issue, create_issue, edit_issue, log_work, transition_issue,
 };
 pub use types::*;
+
+pub mod poll;
+pub use poll::{fetch_recent_issues, recent_issues_jql, PolledIssue};
