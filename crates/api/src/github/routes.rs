@@ -183,12 +183,24 @@ pub(crate) async fn dashboard_route(
     user: AuthUser,
     q: web::Query<DashboardQuery>,
 ) -> Result<HttpResponse, AppError> {
+    let uid = user_id(&user)?;
+
+    // Opportunistic tick hint (A1 spec §4.3): pull this user's scopes forward
+    // so the next tick prioritizes them. Fire-and-forget; never blocks reads.
+    let mark_db = state.db.clone();
+    let mark_user = uid;
+    actix_web::rt::spawn(async move {
+        if let Err(e) = wf_db::tables::sync_state::mark_user_due(&mark_db, mark_user).await {
+            tracing::debug!(error = %e, "mark_user_due failed");
+        }
+    });
+
     let tab = q
         .tab
         .as_deref()
         .and_then(GithubQueueKey::parse)
         .unwrap_or(GithubQueueKey::Assigned);
-    let d = dashboard::get_dashboard(&state, user_id(&user)?, tab).await?;
+    let d = dashboard::get_dashboard(&state, uid, tab).await?;
     Ok(HttpResponse::Ok().json(d))
 }
 
