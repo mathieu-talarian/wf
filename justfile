@@ -52,6 +52,10 @@ db-tests:
 example name:
     cargo run -p wf-db --example {{name}}
 
+# Run SQL against DATABASE_URL: just sql "SELECT * FROM events LIMIT 5"
+sql query:
+    cargo run -q -p wf-db --example sql -- "{{query}}"
+
 # Dump the OpenAPI spec from the running API
 openapi:
     curl -fsS localhost:3000/api/openapi.json
