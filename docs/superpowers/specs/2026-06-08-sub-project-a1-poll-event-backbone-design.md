@@ -288,3 +288,68 @@ connection.
 ## 12. Next step
 
 Invoke writing-plans to turn this into a bite-sized implementation plan.
+
+## Implementation deltas (A1 as built)
+
+### Crate layout
+The shared tick logic lives in a new **`wf-sync`** lib crate (`crates/sync/`), not
+in `wf-api`. This is the §4.5 factoring in practice: the future `wf-worker` will
+call `wf_sync::run_tick` directly without touching the HTTP layer. The live smoke
+harness is:
+
+```bash
+cargo run -p wf-sync --example tick_smoke
+```
+
+(§9 sketched `-p wf-db`; the example lives in `wf-sync` because it depends on
+`run_tick`.)
+
+### Poller strategy (all three providers)
+All pollers fetch **page 1 DESC** (newest-first) and apply **client-side
+compound-cursor filtering** to discard items at or below the stored watermark.
+
+The Jira ASC ordering described in the spec (§6.2) was dropped. JQL absolute
+timestamp predicates (`updated >= "..."`) are interpreted in the **account
+timezone**, not UTC — a silent correctness trap when the connected user's Jira
+account is not in UTC. The DESC + client-side filter approach is timezone-safe,
+requires no JQL timestamp arithmetic, and the dedup index (`UNIQUE (user_id,
+source, external_id)`) makes any replay harmless.
+
+**Documented limitation:** the DESC page-1 window is capped at 50 items (GitHub
+REST default / Jira `maxResults: 50`). If more than 50 scopes update between two
+ticks, the oldest items in that window are silently skipped until a later tick
+advances the cursor far enough to reach them. Dedup keeps replays safe; the
+limitation is acceptable for v1 poll cadence (~2 min).
+
+### Baseline tick behaviour
+The **first poll of a scope** (cursor = NULL) emits **no events** and only
+establishes the high-watermark cursor. This prevents a flood of historical events
+on first connection. Subsequent ticks emit only items strictly after the cursor.
+
+### `/internal/tick` placement and auth
+- The route is mounted at the **root** (`/internal/tick`), not under `/api`.
+- It is **excluded from the OpenAPI spec** (no `#[utoipa::path]` annotation).
+- The `lease_owner` is set to `api-{uuidv4}` (new UUID per request), so
+  concurrent tick calls from the scheduler do not collide on owner-guarded
+  completions.
+- Auth: `X-Internal-Token` header compared against `INTERNAL_TICK_TOKEN` env var
+  (required at boot — server refuses to start without it).
+
+### Live verification
+Verified against the live DB with 16 active scopes (GitHub repos across multiple
+users): tick endpoint returned a JSON summary, all scopes claimed and completed,
+no errors. The `tick_smoke` example printed matching output.
+
+### Integration tests (env-gated, `crates/sync/tests/tick_db.rs`)
+Three tests, all self-skip when `DATABASE_URL` is absent:
+
+| test | what it proves |
+|---|---|
+| `tick_baseline_then_events_then_dedup` | Baseline emits 0 events; second tick emits 1; third tick (same fixture) dedup holds |
+| `tick_two_users_same_repo` | Per-user fan-out: two users watching the same repo each get their own event row |
+| `tick_concurrent_lease_protection` | `FOR UPDATE SKIP LOCKED`: two concurrent ticks process each scope exactly once |
+
+Run with:
+```bash
+DATABASE_URL=... cargo test -p wf-sync --test tick_db -- --test-threads=1
+```

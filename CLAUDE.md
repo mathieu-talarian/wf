@@ -10,7 +10,7 @@
 - Tests: `cargo test --workspace`. Build: `cargo build --workspace`.
 - `#[cfg(test)] mod tests` must be the LAST item in a file (clippy `items-after-test-module`).
 - Public types with a `new()` need a `Default` impl too (clippy `new_without_default` fails under `-D warnings`).
-- Workspace crates: `wf-core`, `wf-db`, `wf-github`, `wf-jira`, `wf-api` (the `wf-` prefix avoids the std `core` clash).
+- Workspace crates: `wf-core`, `wf-db`, `wf-github`, `wf-jira`, `wf-api`, `wf-sync`, `migration` (the `wf-` prefix avoids the std `core` clash).
 
 ## Architecture
 - `wf-core` — config, AES-256-GCM `TokenCipher`, RFC 9457 problem, auth types (no actix/db deps).
@@ -18,6 +18,14 @@
 - `wf-github` / `wf-jira` — `reqwest` clients + domain logic for each integration.
 - `wf-api` — actix-web bin: `AppState` (DI), `AuthUser` extractor (Supabase JWKS), routes, middleware. Entry: `crates/api/src/main.rs`.
   - Observability: `crates/api/src/telemetry.rs` (OTLP traces+metrics+logs) + `middleware/request_tracing.rs` (root span, trace propagation, `http.server.*` metrics). `main()` holds a `TelemetryGuard` and calls `shutdown()` after the server stops.
+
+### Event backbone (A1)
+- `events` + `sync_state` tables (sea-orm-migration DDL). Apply: `cargo run -p migration -- up` (session pooler only — see Database note).
+- Tick logic in `wf-sync` (`run_tick`): reconcile scopes → claim due rows (`FOR UPDATE SKIP LOCKED`) → poll → normalize → insert.
+- `POST /internal/tick` at **root** (not `/api`); auth: `X-Internal-Token` = `INTERNAL_TICK_TOKEN` env (required at boot); not in OpenAPI spec.
+- Poll config envs (all have defaults): `POLL_INTERVAL_SECS` (120), `TICK_BATCH_SIZE` (50), `TICK_BUDGET_MS` (30000), `TICK_LEASE_SECS` (90).
+- Live smoke: `cargo run -p wf-sync --example tick_smoke` (needs `.env` + connected user).
+- Gated integration tests: `DATABASE_URL=... cargo test -p wf-sync --test tick_db -- --test-threads=1`.
 
 ## Database (Supabase)
 - `DATABASE_URL` must be the **session pooler** (`...pooler.supabase.com:5432`).

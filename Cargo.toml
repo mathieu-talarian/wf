@@ -86,6 +86,9 @@ opentelemetry-appender-tracing = "0.32"
 aes-gcm = "0.10"
 base64 = "0.22"
 
+# Async trait helpers (sea-orm-migration uses this)
+async-trait = "0.1"
+
 # Time
 chrono = { version = "0.4", features = ["serde"] }
 

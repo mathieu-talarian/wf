@@ -2,6 +2,13 @@
 //! Env-gated: skips unless DATABASE_URL is set (live-harness pattern).
 //! Run: DATABASE_URL=... cargo test -p wf-sync --test tick_db -- --test-threads=1
 
+// CAUTION (gated run): `opts.github_base` points ALL GitHub REST calls at
+// wiremock, including any real user's scopes claimed during reconcile.
+// Unmatched repos get 404 → `complete_err` on their sync_state rows
+// (consecutive_errors+1, next_poll_at=now). Self-healing: the next real tick
+// resets errors; `complete_err` never touches the cursor. Run gated tests
+// with --test-threads=1.
+
 use std::time::Duration;
 
 use sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};

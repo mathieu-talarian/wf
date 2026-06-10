@@ -74,6 +74,35 @@ terraform -chdir=deploy/terraform apply -var enable_alerts=true
   "workflow-backend — RED" dashboard populate.
 - **Cloud Logging**: app logs arrive via the collector's logs pipeline.
 
+## Tick scheduling
+
+`POST /internal/tick` is called by Cloud Scheduler every 2 minutes. The
+`INTERNAL_TICK_TOKEN` secret is stored in Secret Manager and injected into the
+running container via `service.yaml` (same pattern as `DATABASE_URL`).
+
+Add the secret value once:
+
+```bash
+printf '%s' "$(openssl rand -hex 32)" \
+  | gcloud secrets versions add wf-internal-tick-token --data-file=- --project=workflow-497713
+```
+
+Create the Cloud Scheduler job (run once after first deploy):
+
+```bash
+gcloud scheduler jobs create http wf-tick \
+  --schedule="*/2 * * * *" \
+  --uri="https://<service-url>/internal/tick" \
+  --http-method=POST \
+  --headers="X-Internal-Token=<token>" \
+  --attempt-deadline=60s
+```
+
+The endpoint returns a JSON summary (`scopes_claimed`, `events_written`,
+`errors`) visible in Scheduler logs. Failed scopes back off automatically;
+abandoned leases expire after `TICK_LEASE_SECS` (default 90 s) and are
+reclaimable by the next tick.
+
 ## Local development
 
 No collector required. `cargo run -p wf-api` (with `.env`) starts the server; with
