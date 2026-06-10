@@ -1,8 +1,10 @@
-//! In-process tick scheduler: runs `wf_sync::run_tick` every
-//! `TICK_SCHEDULER_SECS` (default 120) on the actix runtime for the lifetime
-//! of the server. Replaces the former `POST /internal/tick` + Cloud Scheduler
-//! trigger; on Cloud Run this requires CPU to stay allocated between requests
-//! (see DEPLOYMENT.md).
+//! In-process tick scheduler: runs `wf_sync::run_tick` at boot (startup
+//! reconciliation) and then every `TICK_SCHEDULER_SECS` (default 120) on the
+//! actix runtime. Replaces the former `POST /internal/tick` + Cloud Scheduler
+//! trigger. On Cloud Run (CPU throttled, scale-to-zero) this is deliberately
+//! best-effort: ticks run at instance startup and while the instance is
+//! serving traffic, and stall when it idles or scales to zero (see
+//! DEPLOYMENT.md).
 
 use std::time::Duration;
 

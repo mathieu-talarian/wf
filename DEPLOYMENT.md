@@ -76,25 +76,31 @@ terraform -chdir=deploy/terraform apply -var enable_alerts=true
 
 ## Tick scheduling
 
-The tick runs **in-process**: the server spawns a background task at boot that
-calls `wf_sync::run_tick` every `TICK_SCHEDULER_SECS` (default 120 s) and logs
-a `tick.scheduler` line per run (`scopes_claimed`, `scopes_ok`,
-`scopes_failed`, `events_written`, `elapsed_ms`). There is no HTTP trigger and
-no `INTERNAL_TICK_TOKEN` secret anymore.
+The tick runs **in-process**: the server spawns a background task at boot
+that calls `wf_sync::run_tick` immediately (startup reconciliation) and then
+every `TICK_SCHEDULER_SECS` (default 120 s), logging a `tick.scheduler` line
+per run (`scopes_claimed`, `scopes_ok`, `scopes_failed`, `events_written`,
+`elapsed_ms`). There is no HTTP trigger and no `INTERNAL_TICK_TOKEN` secret
+anymore.
 
-This requires the Cloud Run instance to actually be running and have CPU
-between requests, so `service.yaml` pins:
+The service keeps Cloud Run's default scaling (scale-to-zero, CPU throttled
+between requests), so syncing is deliberately **best-effort**:
 
-- `autoscaling.knative.dev/minScale: "1"` — no scale-to-zero (a stopped
-  instance can't tick), and
-- `run.googleapis.com/cpu-throttling: "false"` — CPU stays allocated outside
-  request handling (a throttled instance's timers stall).
+- a cold start (first request after idle) boots the server and runs a tick
+  right away, catching up on everything that happened while it was down;
+- while the instance is handling traffic — i.e. while someone is actually
+  using the app — the 2-minute ticks keep running;
+- when the service idles or scales to zero, ticks stall until the next
+  request. No users online ⇒ no syncing, and that's fine: the backlog is
+  reconciled on the next startup tick.
 
-Both increase the service's baseline cost; that's the price of dropping the
-external trigger. Concurrent ticks (e.g. during a deploy's instance overlap)
-are safe: scope claiming uses `FOR UPDATE SKIP LOCKED` leases and event
-inserts dedup. Failed scopes back off automatically; abandoned leases expire
-after `TICK_LEASE_SECS` (default 90 s) and are reclaimable by the next tick.
+If continuous background syncing ever becomes a requirement, pin
+`autoscaling.knative.dev/minScale: "1"` and
+`run.googleapis.com/cpu-throttling: "false"` in `service.yaml` (always-on
+billing). Concurrent ticks (e.g. during a deploy's instance overlap) are
+safe: scope claiming uses `FOR UPDATE SKIP LOCKED` leases and event inserts
+dedup. Failed scopes back off automatically; abandoned leases expire after
+`TICK_LEASE_SECS` (default 90 s) and are reclaimable by the next tick.
 
 **Migrating an existing deployment:** delete the old trigger and secret —
 

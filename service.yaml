@@ -16,10 +16,6 @@ spec:
       annotations:
         # [REQUIRED] set the collector as a parent to the app
         run.googleapis.com/container-dependencies: '{"app":["collector"]}'
-        # The tick scheduler runs in-process (no Cloud Scheduler trigger), so
-        # the instance must keep running and keep CPU between requests.
-        autoscaling.knative.dev/minScale: "1"
-        run.googleapis.com/cpu-throttling: "false"
         # Make the collector config + the two app secrets available to the
         # revision. Each entry is "alias:projects/PROJECT/secrets/SECRET"; the
         # alias is what secretKeyRef.name / volumes.secret.secretName reference.
