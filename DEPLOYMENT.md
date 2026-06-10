@@ -40,8 +40,6 @@ printf '%s' 'postgres://USER:PASS@aws-0-REGION.pooler.supabase.com:5432/postgres
   | gcloud secrets versions add wf-database-url --data-file=- --project=workflow-497713
 printf '%s' 'BASE64_32_BYTE_KEY' \
   | gcloud secrets versions add wf-github-token-encryption-key --data-file=- --project=workflow-497713
-printf '%s' "$(openssl rand -hex 32)" \
-  | gcloud secrets versions add wf-internal-tick-token --data-file=- --project=workflow-497713
 ```
 
 ## Deploy
@@ -78,35 +76,32 @@ terraform -chdir=deploy/terraform apply -var enable_alerts=true
 
 ## Tick scheduling
 
-`POST /internal/tick` is called by Cloud Scheduler every 2 minutes. The
-`INTERNAL_TICK_TOKEN` env var is sourced from a Secret Manager secret named
-`wf-internal-tick-token`. Terraform creates the secret container (alongside
-`wf-database-url` and `wf-github-token-encryption-key`), and `service.yaml`
-injects it into the container as a `secretKeyRef` with the same pattern as
-`DATABASE_URL`.
+The tick runs **in-process**: the server spawns a background task at boot that
+calls `wf_sync::run_tick` every `TICK_SCHEDULER_SECS` (default 120 s) and logs
+a `tick.scheduler` line per run (`scopes_claimed`, `scopes_ok`,
+`scopes_failed`, `events_written`, `elapsed_ms`). There is no HTTP trigger and
+no `INTERNAL_TICK_TOKEN` secret anymore.
 
-Add the secret value once (after `terraform apply`):
+This requires the Cloud Run instance to actually be running and have CPU
+between requests, so `service.yaml` pins:
+
+- `autoscaling.knative.dev/minScale: "1"` — no scale-to-zero (a stopped
+  instance can't tick), and
+- `run.googleapis.com/cpu-throttling: "false"` — CPU stays allocated outside
+  request handling (a throttled instance's timers stall).
+
+Both increase the service's baseline cost; that's the price of dropping the
+external trigger. Concurrent ticks (e.g. during a deploy's instance overlap)
+are safe: scope claiming uses `FOR UPDATE SKIP LOCKED` leases and event
+inserts dedup. Failed scopes back off automatically; abandoned leases expire
+after `TICK_LEASE_SECS` (default 90 s) and are reclaimable by the next tick.
+
+**Migrating an existing deployment:** delete the old trigger and secret —
 
 ```bash
-printf '%s' "$(openssl rand -hex 32)" \
-  | gcloud secrets versions add wf-internal-tick-token --data-file=- --project=workflow-497713
+gcloud scheduler jobs delete wf-tick --project=workflow-497713
+gcloud secrets delete wf-internal-tick-token --project=workflow-497713
 ```
-
-Create the Cloud Scheduler job (run once after first deploy):
-
-```bash
-gcloud scheduler jobs create http wf-tick \
-  --schedule="*/2 * * * *" \
-  --uri="https://<service-url>/internal/tick" \
-  --http-method=POST \
-  --headers="X-Internal-Token=<token>" \
-  --attempt-deadline=60s
-```
-
-The endpoint returns a JSON summary (`scopes_claimed`, `events_written`,
-`errors`) visible in Scheduler logs. Failed scopes back off automatically;
-abandoned leases expire after `TICK_LEASE_SECS` (default 90 s) and are
-reclaimable by the next tick.
 
 ## Local development
 

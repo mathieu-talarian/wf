@@ -25,8 +25,8 @@
 - `events` + `sync_state` tables (sea-orm-migration DDL). Apply: `cargo run -p migration -- up` (session pooler only — see Database note).
 - Tick logic in `wf-sync` (`run_tick`): reconcile scopes → claim due rows (`FOR UPDATE SKIP LOCKED`) → poll → normalize → insert.
 - Pollers fetch page-1 DESC + filter client-side against the compound cursor — do NOT switch to absolute JQL `updated >=` filters: Jira interprets JQL timestamps in the *account's* timezone (correctness trap; see A1 spec appendix).
-- `POST /internal/tick` at **root** (not `/api`); auth: `X-Internal-Token` = `INTERNAL_TICK_TOKEN` env (required at boot); not in OpenAPI spec.
-- Poll config envs (all have defaults): `POLL_INTERVAL_SECS` (120), `TICK_BATCH_SIZE` (50), `TICK_BUDGET_MS` (30000), `TICK_LEASE_SECS` (90).
+- The tick runs from an **in-process scheduler** (`crates/api/src/scheduler.rs`, spawned in `main()`): every `TICK_SCHEDULER_SECS` (default 120), first run at boot, logs target `tick.scheduler`. There is no HTTP trigger and no `INTERNAL_TICK_TOKEN`.
+- Poll config envs (all have defaults): `POLL_INTERVAL_SECS` (120), `TICK_BATCH_SIZE` (50), `TICK_BUDGET_MS` (30000), `TICK_LEASE_SECS` (90), `TICK_SCHEDULER_SECS` (120).
 - Live smoke: `cargo run -p wf-sync --example tick_smoke` (needs `.env` + connected user).
 - Gated integration tests: `DATABASE_URL=... cargo test -p wf-sync --test tick_db -- --test-threads=1`.
 

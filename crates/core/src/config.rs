@@ -62,7 +62,8 @@ pub struct Config {
     pub tick_batch_size: u64,
     pub tick_budget_ms: u64,
     pub tick_lease_secs: u64,
-    pub internal_tick_token: String,
+    /// Interval of the in-process tick scheduler (`TICK_SCHEDULER_SECS`).
+    pub tick_scheduler_secs: u64,
 }
 
 const DEFAULT_PORT: u16 = 3000;
@@ -106,7 +107,7 @@ impl Config {
             tick_batch_size: parse_u64(map, "TICK_BATCH_SIZE", 50)?,
             tick_budget_ms: parse_u64(map, "TICK_BUDGET_MS", 30_000)?,
             tick_lease_secs: parse_u64(map, "TICK_LEASE_SECS", 90)?,
-            internal_tick_token: required(map, "INTERNAL_TICK_TOKEN")?,
+            tick_scheduler_secs: parse_u64(map, "TICK_SCHEDULER_SECS", 120)?,
         })
     }
 
@@ -213,7 +214,6 @@ mod tests {
         m.insert("SUPABASE_URL".into(), "https://proj.supabase.co".into());
         // 32 zero bytes, base64-encoded.
         m.insert("GITHUB_TOKEN_ENCRYPTION_KEY".into(), "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=".into());
-        m.insert("INTERNAL_TICK_TOKEN".into(), "secret".into());
         m
     }
 
@@ -268,22 +268,21 @@ mod tests {
         assert_eq!(cfg.tick_batch_size, 50);
         assert_eq!(cfg.tick_budget_ms, 30_000);
         assert_eq!(cfg.tick_lease_secs, 90);
-        assert_eq!(cfg.internal_tick_token, "secret");
+        assert_eq!(cfg.tick_scheduler_secs, 120);
     }
 
     #[test]
-    fn tick_config_overrides_and_required_token() {
+    fn tick_config_overrides() {
         let mut env = base();
-        env.insert("INTERNAL_TICK_TOKEN".into(), "s".into());
         env.insert("POLL_INTERVAL_SECS".into(), "30".into());
-        assert_eq!(Config::from_map(&env).unwrap().poll_interval_secs, 30);
+        env.insert("TICK_SCHEDULER_SECS".into(), "15".into());
+        let cfg = Config::from_map(&env).unwrap();
+        assert_eq!(cfg.poll_interval_secs, 30);
+        assert_eq!(cfg.tick_scheduler_secs, 15);
         env.insert("POLL_INTERVAL_SECS".into(), "abc".into());
         assert!(Config::from_map(&env).is_err());
         env.insert("POLL_INTERVAL_SECS".into(), "0".into());
         assert!(Config::from_map(&env).is_err());
-        let mut no_token = base();
-        no_token.remove("INTERNAL_TICK_TOKEN");
-        assert!(Config::from_map(&no_token).is_err());
     }
 
     #[test]

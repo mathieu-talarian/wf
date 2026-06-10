@@ -1,5 +1,5 @@
 # Workflow backend — task runner. `just` lists recipes.
-# .env is loaded into recipe env (INTERNAL_TICK_TOKEN, DATABASE_URL, ...).
+# .env is loaded into recipe env (DATABASE_URL, ...).
 
 set dotenv-load
 
@@ -35,10 +35,8 @@ migrate:
     cargo run -p migration -- up
 
 # --- Event backbone / activity feed --------------------------------------
-
-# Trigger one sync tick on the locally running API
-tick:
-    curl -fsS -X POST localhost:3000/internal/tick -H "X-Internal-Token: $INTERNAL_TICK_TOKEN"
+# The tick runs in-process every TICK_SCHEDULER_SECS (default 120) while
+# `just run` is up — no manual trigger needed.
 
 # Live tick smoke test (needs .env + a connected user)
 smoke:

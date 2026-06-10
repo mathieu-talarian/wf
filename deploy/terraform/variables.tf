@@ -39,12 +39,6 @@ variable "github_token_encryption_key_secret_id" {
   default     = "wf-github-token-encryption-key"
 }
 
-variable "internal_tick_token_secret_id" {
-  description = "Secret Manager secret ID holding INTERNAL_TICK_TOKEN (hex-encoded random bytes). Container is created empty; populate the value out-of-band."
-  type        = string
-  default     = "wf-internal-tick-token"
-}
-
 variable "runtime_service_account_email" {
   description = "Cloud Run runtime service account email. Defaults to the project's Compute Engine default service account."
   type        = string

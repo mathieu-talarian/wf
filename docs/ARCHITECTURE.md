@@ -30,9 +30,9 @@ Deployment target: **Google Cloud Run** (project `workflow-497713`, region `euro
  Browser (web app)        │  ┌──────────────── wf-api ────────────────┐   ┌─────────────────────────┐     │
  ──Bearer JWT──► /api/** ─┼─►│ CORS → RequestTracing middleware        │   │ OTel Collector sidecar  │     │
                           │  │  → AuthUser extractor (JWKS verify)     │──►│ gRPC OTLP :4317         │──►  │ Cloud Trace /
- Cloud Scheduler          │  │  → route handler                        │   └─────────────────────────┘     │ Monitoring /
- ──X-Internal-Token──►    │  │      ├─ wf-db (SeaORM → Supabase 5432)  │                                   │ Logging
-   POST /internal/tick ───┼─►│      ├─ wf-github (REST + GraphQL)      │                                   │
+ In-process scheduler     │  │  → route handler                        │   └─────────────────────────┘     │ Monitoring /
+ (tick every 2 min) ──────┼─►│      ├─ wf-db (SeaORM → Supabase 5432)  │                                   │ Logging
+                          │  │      ├─ wf-github (REST + GraphQL)      │                                   │
                           │  │      ├─ wf-jira (Jira Cloud REST)       │                                   │
  Cloud Run probes ──────► │  │      └─ wf-sync (tick engine)           │                                   │
    GET /healthz           │  └─────────────────────────────────────────┘                                   │
@@ -107,7 +107,8 @@ Seven crates; the `wf-` prefix avoids the std `core` name clash. All opt into th
 | `auth.rs` | `JwksVerifier` + `AuthUser` actix extractor: validates `Authorization: Bearer` against Supabase JWKS (ES256), checks audience. |
 | `error.rs` | `AppError` → RFC 9457 responses with stable slugs + `reason`. |
 | `dto.rs` | Shared response DTOs (`#[serde(rename_all = "camelCase")]`). |
-| `routes/` | `health.rs` (`/health`, `/hello/{name}`), `me.rs` (`GET /me` — verifies JWT, upserts user), `events.rs` (`GET /me/events` — keyset-paged feed read), `internal.rs` (`POST /internal/tick`). |
+| `routes/` | `health.rs` (`/health`, `/hello/{name}`), `me.rs` (`GET /me` — verifies JWT, upserts user), `events.rs` (`GET /me/events` — keyset-paged feed read). |
+| `scheduler.rs` | In-process tick scheduler: background task spawned at boot, runs `wf_sync::run_tick` every `TICK_SCHEDULER_SECS`. |
 | `github/` | `routes.rs` (22 routes), `pat.rs` (connect/validate/disconnect), `dashboard.rs` + `dashboard_cache.rs` (SWR snapshot cache; the dashboard route also sets **opportunistic sync priority hints** by marking the user's sync scopes overdue), `token_cache.rs`, `activity.rs`, `summary.rs`. |
 | `jira/` | `routes.rs` (23 routes), `pat.rs`, `data.rs`, `actions.rs`, `summary.rs`. |
 | `middleware/request_tracing.rs` | Root span per request, W3C trace-context propagation (continues Cloud Run's `traceparent`), `http.server.*` metrics. |
@@ -140,7 +141,8 @@ Conventions (all routes): responses are camelCase JSON; timestamps are ISO-8601 
 | Method & path | Auth | Purpose |
 |---|---|---|
 | `GET /healthz` | none | Cloud Run liveness/startup probe. Plain-text `ok`; **no I/O** (never blocks on the DB pool). |
-| `POST /internal/tick` | `X-Internal-Token: $INTERNAL_TICK_TOKEN` | Runs one sync tick (§8). Returns `TickSummary` JSON for Scheduler logs. Empty configured token ⇒ deny-all. |
+
+There is no HTTP tick trigger: the sync tick (§8) runs from an in-process scheduler spawned at boot (`scheduler.rs`).
 
 ### 4.2 System + user (`/api`)
 
@@ -244,7 +246,6 @@ Writes:
 
 - **User auth:** every `/api/me/**` handler takes the `AuthUser` extractor, which verifies the `Authorization: Bearer` JWT against the Supabase project's **JWKS** (ES256) and checks `aud` (`SUPABASE_JWT_AUDIENCE`, default `authenticated`). The JWT's `sub` is the `users.id` (uuid).
 - **Token storage:** GitHub PATs and Jira API tokens are sealed with **AES-256-GCM** (`TokenCipher`): 12-byte random IV, detached 16-byte auth tag, each part base64-encoded into its own DB column (`*_ciphertext`, `*_iv`, `*_auth_tag`). The key is `GITHUB_TOKEN_ENCRYPTION_KEY` (base64 of exactly 32 bytes — boot fails otherwise). Plaintext tokens are never logged or returned; status endpoints expose only `last_four`.
-- **Internal auth:** `POST /internal/tick` compares `X-Internal-Token` to `INTERNAL_TICK_TOKEN` with `==`. The prefix-match timing leak is **documented and accepted for v1** (HTTPS, low-value oracle); OIDC between Scheduler and Cloud Run is the documented hardening path. An empty configured token denies all requests.
 - **CORS:** allow-listed origins from `CORS_ORIGINS` (CSV), credentials supported, any method/header.
 - **TLS/crypto stack:** rustls everywhere (reqwest, sqlx `tls-rustls-ring`); JWT via `jsonwebtoken` with the `aws_lc_rs` crypto provider feature (a provider feature is mandatory — without one, verification panics at runtime).
 
@@ -259,8 +260,8 @@ Parsed fail-fast at boot by `wf_core::Config` (`crates/core/src/config.rs`). Emp
 | `DATABASE_URL` | ✅ | — | Supabase Postgres. **Must be the session pooler** `...pooler.supabase.com:5432` (§7.1). |
 | `SUPABASE_URL` | ✅ | — | `https://<project>.supabase.co` — JWKS source. |
 | `GITHUB_TOKEN_ENCRYPTION_KEY` | ✅ | — | Base64 of exactly 32 bytes; AES-256-GCM key for **all** stored tokens (GitHub + Jira). |
-| `INTERNAL_TICK_TOKEN` | ✅ | — | Shared secret for `POST /internal/tick`. |
 | `PORT` | | `3000` | Listen port (positive integer). |
+| `TICK_SCHEDULER_SECS` | | `120` | Interval of the in-process tick scheduler (§8). |
 | `CORS_ORIGINS` | | `http://localhost:5173` | CSV of allowed origins. |
 | `NODE_ENV` | | `development` | `development` \| `production` \| `test`. |
 | `LOG_LEVEL` | | `info` | `trace`\|`debug`\|`info`\|`warning`\|`error`\|`fatal` → tracing env-filter. |
@@ -359,7 +360,7 @@ Parsed fail-fast at boot by `wf_core::Config` (`crates/core/src/config.rs`). Emp
 
 ## 8. Event backbone (A1) — the tick
 
-`wf_sync::run_tick` (shared by `POST /internal/tick` and any future worker):
+`wf_sync::run_tick` (called by the in-process scheduler and any future worker):
 
 1. **Reconcile scopes** — derive the set of pollable scopes from current connections (selected repos × entity kinds for GitHub; selected projects for Jira) and upsert/remove `sync_state` rows.
 2. **Claim due rows** — `SELECT ... FOR UPDATE SKIP LOCKED` on rows with `next_poll_at <= now()` and no live lease, up to `TICK_BATCH_SIZE`; stamp `lease_owner`/`lease_until`. Safe to run concurrently.
@@ -367,7 +368,7 @@ Parsed fail-fast at boot by `wf_core::Config` (`crates/core/src/config.rs`). Emp
 4. **Normalize + insert** — map to `events` rows; inserts are idempotent on `(user_id, source, scope_key, external_id)`-style dedup, so re-polls never duplicate.
 5. **Advance or back off** — success: store new cursor, `next_poll_at = now() + POLL_INTERVAL_SECS`, clear errors. Failure: increment `consecutive_errors`, exponential backoff, record `last_error`. The whole tick stops when `TICK_BUDGET_MS` is exhausted; abandoned leases expire and are reclaimed by a later tick.
 
-**Scheduling:** Cloud Scheduler job `wf-tick` POSTs `/internal/tick` every 2 minutes with the `X-Internal-Token` header (setup commands in `DEPLOYMENT.md`). The GitHub dashboard route additionally marks that user's scopes overdue, so an active user's next tick refreshes them first.
+**Scheduling:** `wf-api` spawns a background task at boot (`scheduler.rs`) that runs a tick every `TICK_SCHEDULER_SECS` (default 120; first run immediately at boot) and logs a `tick.scheduler` summary line per run. On Cloud Run this requires `minScale: 1` + CPU always allocated (see `DEPLOYMENT.md`); concurrent ticks across overlapping instances are safe (`FOR UPDATE SKIP LOCKED` + insert dedup). The GitHub dashboard route additionally marks that user's scopes overdue, so an active user's next tick refreshes them first.
 
 **Verification tooling:** `cargo run -p wf-sync --example tick_smoke` (live); `DATABASE_URL=... cargo test -p wf-sync --test tick_db -- --test-threads=1` (gated integration tests using wiremock for GitHub — note they redirect GitHub calls for **real scopes** in that DB, so point them at a dev database).
 
@@ -462,4 +463,4 @@ Live harnesses (need `.env` + a connected user):
 | **B (full)** | SSE/live updates on top of the events feed. Contract pinned in `docs/superpowers/specs/2026-06-10-activity-feed-ui-design.md`. | Designed, not started. |
 | **A2** | GitHub/Jira webhooks to reduce event latency (polling stays as backfill). | Designed, not started. |
 | **C** | PR ↔ Jira-issue linking + rules. | Designed, not started. |
-| Hardening | OIDC auth for Scheduler→`/internal/tick`; GitHub PAT validation currently hardcodes `validation_status: "valid"` on connect (known gap). | Backlog. |
+| Hardening | GitHub PAT validation currently hardcodes `validation_status: "valid"` on connect (known gap). | Backlog. |

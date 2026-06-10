@@ -10,6 +10,7 @@ mod jira;
 mod middleware;
 mod openapi;
 mod routes;
+mod scheduler;
 mod state;
 mod telemetry;
 
@@ -89,6 +90,8 @@ async fn main() -> std::io::Result<()> {
         dashboard_cache: Arc::new(crate::github::dashboard_cache::DashboardCache::default()),
     });
 
+    scheduler::spawn(state.clone());
+
     let server = HttpServer::new(move || {
         let mut cors = Cors::default()
             .supports_credentials()
@@ -103,7 +106,6 @@ async fn main() -> std::io::Result<()> {
             .wrap(cors)
             .wrap(RequestTracing::new())
             .route("/healthz", web::get().to(healthz))
-            .configure(routes::internal::configure)
             .service(web::scope("/api").configure(routes::configure))
             .default_service(web::route().to(not_found))
     })

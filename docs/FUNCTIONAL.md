@@ -205,7 +205,7 @@ Writes return either the created object (comment, issue) or a simple `{ "ok": tr
 
 Once you're connected, the server **keeps watching for you** even when the app is closed:
 
-- Every ~2 minutes, a scheduled job wakes the server (`POST /internal/tick` — internal, secret-protected, not callable by users).
+- Every ~2 minutes, the server runs a sync pass on its own (a built-in scheduler — nothing external to configure, nothing callable by users).
 - For each connected user it checks their selected GitHub repos (PR activity, workflow runs) and Jira projects (issue changes) for anything new since last time.
 - New activity is recorded as **events** in your personal history: "PR #42 was opened", "CI failed on main", "ENG-123 moved to Done by Alice", with who/what/when and a link.
 - Visiting your GitHub dashboard bumps you to the front of the line, so active users get the freshest data.
@@ -238,13 +238,14 @@ Returns `{ "events": [...], "nextBefore": ... }`. Each event has: `id`, `source`
 | `GET /api/hello/{name}` | Connectivity echo (`{ greeting: "Hello, <name>" }`). Public. |
 | `GET /api/openapi.json` | The machine-readable contract of every endpoint above — used to generate the web app's API client and usable in Swagger UI. Public. |
 | `GET /healthz` | Infrastructure liveness probe (Cloud Run). Plain `ok`. |
-| `POST /internal/tick` | The activity-feed tracker trigger (§11). Requires the internal secret header; returns a run summary (how many sources checked, how many events written). |
+
+The activity-feed tracker (§11) has no endpoint: it runs inside the server on a timer.
 
 ---
 
 ## 13. The product surface in numbers
 
-- **49 user-facing operations**: 2 system, 1 profile, 22 GitHub, 23 Jira, 1 activity feed — plus 2 infrastructure endpoints.
+- **49 user-facing operations**: 2 system, 1 profile, 22 GitHub, 23 Jira, 1 activity feed — plus 1 infrastructure endpoint.
 - **2 integrations** (GitHub, Jira), each with: connect → validate → select scope → dashboard → detail → act.
 - **5 PR queues** and **5 issue queues** make up the two dashboards.
 - **6 GitHub write actions** (dispatch, create/merge/close PR, repos & favorites selection) and **6 Jira write actions** (transition, comment, assign, worklog, create, edit).

@@ -11,7 +11,7 @@ Rust (actix-web) backend for **Workflow** — a GitHub + Jira developer dashboar
 - **Auth** — verifies Supabase-issued JWTs (ES256, via JWKS) on every `/api/me/**` route and upserts the user on first contact.
 - **GitHub integration** — connect a personal access token (sealed with AES-256-GCM), then: PR dashboard with stale-while-revalidate caching, PR enrichment, branch/workflow/environment browsing, and write actions (dispatch workflow, create/merge/close PR, favorites).
 - **Jira integration** — connect Jira Cloud credentials, then: multi-queue dashboard, JQL search, issue detail, and write actions (transition, comment, assign, worklog, create/edit issue).
-- **Activity feed** — a `POST /internal/tick` endpoint (called by Cloud Scheduler every 2 min) polls GitHub/Jira for each connected user's scopes and normalizes activity into an `events` table (A1); `GET /api/me/events` serves it back as a filtered, cursor-paged feed (B-lite) powering the web app's `/activity` page.
+- **Activity feed** — an in-process scheduler ticks every 2 min, polling GitHub/Jira for each connected user's scopes and normalizing activity into an `events` table (A1); `GET /api/me/events` serves it back as a filtered, cursor-paged feed (B-lite) powering the web app's `/activity` page.
 - **Observability** — OpenTelemetry traces, metrics, and logs exported over gRPC OTLP to a collector sidecar on Cloud Run.
 
 ## Quickstart
@@ -30,7 +30,6 @@ Minimal `.env` (full reference in [docs/ARCHITECTURE.md §6](docs/ARCHITECTURE.m
 DATABASE_URL=postgres://...pooler.supabase.com:5432/postgres   # MUST be the session pooler (5432)
 SUPABASE_URL=https://<project>.supabase.co
 GITHUB_TOKEN_ENCRYPTION_KEY=<base64 of exactly 32 random bytes>
-INTERNAL_TICK_TOKEN=<any secret string>
 ```
 
 > ⚠️ `DATABASE_URL` must use the Supabase **session pooler** (`...pooler.supabase.com:5432`). The transaction pooler (6543) breaks SeaORM/sqlx with `42P05`; the direct host is IPv6-only.
@@ -84,8 +83,7 @@ All application routes live under `/api`; auth is `Authorization: Bearer <Supaba
 | User | `GET /api/me` |
 | GitHub | 22 routes under `/api/me/github/**` (connection, dashboard, repos, PRs, branches, workflows, environments, favorites) |
 | Jira | 23 routes under `/api/me/jira/**` (connection, dashboard, queues, search, issue reads/writes, metadata) |
-| Activity | `GET /api/me/events` (cursor-paged feed with `source` / `typePrefix` / `scopeKey` filters) |
-| Internal | `POST /internal/tick` (root-level, `X-Internal-Token` auth, not in OpenAPI) |
+| Activity | `GET /api/me/events` (cursor-paged feed with `source` / `typePrefix` / `scopeKey` filters); the sync tick itself runs in-process every 2 min, no endpoint |
 
 The complete route catalog with request/response shapes is in [docs/ARCHITECTURE.md §4](docs/ARCHITECTURE.md#4-http-api--complete-route-catalog), and machine-readable at `/api/openapi.json`.
 

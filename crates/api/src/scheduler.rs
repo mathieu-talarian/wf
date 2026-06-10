@@ -1,0 +1,59 @@
+//! In-process tick scheduler: runs `wf_sync::run_tick` every
+//! `TICK_SCHEDULER_SECS` (default 120) on the actix runtime for the lifetime
+//! of the server. Replaces the former `POST /internal/tick` + Cloud Scheduler
+//! trigger; on Cloud Run this requires CPU to stay allocated between requests
+//! (see DEPLOYMENT.md).
+
+use std::time::Duration;
+
+use actix_web::web;
+use tokio::time::MissedTickBehavior;
+use wf_sync::TickOptions;
+
+use crate::state::AppState;
+
+fn tick_options(state: &AppState) -> TickOptions {
+    TickOptions {
+        batch: state.config.tick_batch_size,
+        budget: Duration::from_millis(state.config.tick_budget_ms),
+        lease_secs: state.config.tick_lease_secs,
+        poll_interval_secs: state.config.poll_interval_secs,
+        owner: format!("api-sched-{}", uuid::Uuid::new_v4()),
+        github_base: None,
+    }
+}
+
+async fn run_once(state: &AppState) {
+    let started = std::time::Instant::now();
+    match wf_sync::run_tick(&state.db, &state.cipher, &tick_options(state)).await {
+        Ok(s) => tracing::info!(
+            target: "tick.scheduler",
+            scopes_claimed = s.scopes_claimed,
+            scopes_ok = s.scopes_ok,
+            scopes_failed = s.scopes_failed,
+            events_written = s.events_written,
+            elapsed_ms = started.elapsed().as_millis() as u64,
+            "tick complete",
+        ),
+        Err(e) => tracing::warn!(target: "tick.scheduler", error = %e, "tick failed"),
+    }
+}
+
+async fn run_loop(state: web::Data<AppState>, every: Duration) {
+    let mut interval = tokio::time::interval(every);
+    // After a stall, resume the cadence instead of firing back-to-back.
+    interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
+    loop {
+        // The first tick resolves immediately: a baseline run at boot.
+        interval.tick().await;
+        run_once(&state).await;
+    }
+}
+
+/// Spawns the scheduler onto the actix runtime. The task is detached: it
+/// stops when the server process exits.
+pub(crate) fn spawn(state: web::Data<AppState>) {
+    let secs = state.config.tick_scheduler_secs;
+    tracing::info!(target: "tick.scheduler", interval_secs = secs, "tick scheduler started");
+    actix_web::rt::spawn(run_loop(state, Duration::from_secs(secs)));
+}

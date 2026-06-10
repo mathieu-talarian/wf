@@ -16,10 +16,14 @@ spec:
       annotations:
         # [REQUIRED] set the collector as a parent to the app
         run.googleapis.com/container-dependencies: '{"app":["collector"]}'
+        # The tick scheduler runs in-process (no Cloud Scheduler trigger), so
+        # the instance must keep running and keep CPU between requests.
+        autoscaling.knative.dev/minScale: "1"
+        run.googleapis.com/cpu-throttling: "false"
         # Make the collector config + the two app secrets available to the
         # revision. Each entry is "alias:projects/PROJECT/secrets/SECRET"; the
         # alias is what secretKeyRef.name / volumes.secret.secretName reference.
-        run.googleapis.com/secrets: "__COLLECTOR_CONFIG_SECRET__:projects/__PROJECT_ID__/secrets/__COLLECTOR_CONFIG_SECRET__,wf-database-url:projects/__PROJECT_ID__/secrets/wf-database-url,wf-github-token-encryption-key:projects/__PROJECT_ID__/secrets/wf-github-token-encryption-key,wf-internal-tick-token:projects/__PROJECT_ID__/secrets/wf-internal-tick-token"
+        run.googleapis.com/secrets: "__COLLECTOR_CONFIG_SECRET__:projects/__PROJECT_ID__/secrets/__COLLECTOR_CONFIG_SECRET__,wf-database-url:projects/__PROJECT_ID__/secrets/wf-database-url,wf-github-token-encryption-key:projects/__PROJECT_ID__/secrets/wf-github-token-encryption-key"
     spec:
       containers:
         - image: __APP_IMAGE__
@@ -60,11 +64,6 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: wf-github-token-encryption-key
-                  key: latest
-            - name: INTERNAL_TICK_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: wf-internal-tick-token
                   key: latest
           resources:
             limits:
