@@ -55,6 +55,7 @@ Errors are returned as RFC 9457 `application/problem+json` carrying a stable \
     tags(
         (name = "system", description = "Liveness and info"),
         (name = "me", description = "Authenticated user"),
+        (name = "events", description = "Activity-feed events"),
         (name = "github", description = "GitHub integration"),
         (name = "jira", description = "Jira integration")
     ),
@@ -62,6 +63,7 @@ Errors are returned as RFC 9457 `application/problem+json` carrying a stable \
         crate::routes::health::health,
         crate::routes::health::hello,
         crate::routes::me::me,
+        crate::routes::events::list_events,
         // GitHub
         crate::github::routes::status,
         crate::github::routes::connect,
@@ -113,6 +115,8 @@ Errors are returned as RFC 9457 `application/problem+json` carrying a stable \
     components(schemas(
         // wf-api response + body DTOs
         crate::routes::me::MeResponse,
+        crate::routes::events::EventDto,
+        crate::routes::events::EventsPage,
         crate::routes::health::HealthResponse,
         crate::routes::health::HelloResponse,
         crate::dto::OkResponse,
@@ -215,8 +219,8 @@ mod tests {
     fn spec_is_complete() {
         let doc = ApiDoc::openapi();
 
-        // 41 unique path keys (48 operations; some paths carry multiple methods).
-        assert_eq!(doc.paths.paths.len(), 41, "unexpected path count");
+        // 42 unique path keys (49 operations; some paths carry multiple methods).
+        assert_eq!(doc.paths.paths.len(), 42, "unexpected path count");
 
         // Bearer security scheme is registered.
         let components = doc.components.as_ref().expect("components");

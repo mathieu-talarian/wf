@@ -1,5 +1,6 @@
 use actix_web::web;
 
+pub mod events;
 pub mod health;
 pub mod internal;
 pub mod me;
@@ -9,6 +10,7 @@ pub mod me;
 pub fn configure(cfg: &mut web::ServiceConfig) {
     health::configure(cfg);
     me::configure(cfg);
+    events::configure(cfg);
     crate::github::routes::configure(cfg);
     crate::jira::routes::configure(cfg);
     crate::openapi::configure(cfg);

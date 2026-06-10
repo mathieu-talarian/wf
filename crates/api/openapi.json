@@ -191,6 +191,75 @@
         ],
         "type": "object"
       },
+      "EventDto": {
+        "properties": {
+          "actor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "occurredAt": {
+            "type": "string"
+          },
+          "payload": {},
+          "scopeKey": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "type": {
+            "type": "string"
+          },
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "source",
+          "type",
+          "scopeKey",
+          "occurredAt",
+          "payload"
+        ],
+        "type": "object"
+      },
+      "EventsPage": {
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/EventDto"
+            },
+            "type": "array"
+          },
+          "nextBefore": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "events"
+        ],
+        "type": "object"
+      },
       "GithubAccountSummary": {
         "description": "Account header on the dashboard response (port of `GithubAccountSummaryT`).",
         "properties": {
@@ -2107,6 +2176,96 @@
         ]
       }
     },
+    "/api/me/events": {
+      "get": {
+        "operationId": "listEvents",
+        "parameters": [
+          {
+            "description": "Return only events with `id < before` (cursor for the next page).",
+            "in": "query",
+            "name": "before",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Max events to return (1–100, default 50).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Filter by exact `source` value (e.g. `\"github\"`, `\"jira\"`).",
+            "in": "query",
+            "name": "source",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Filter by `event_type` prefix (e.g. `\"pr.\"` matches `\"pr.opened\"`).",
+            "in": "query",
+            "name": "typePrefix",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Filter by exact `scope_key` value (e.g. a Jira project key).",
+            "in": "query",
+            "name": "scopeKey",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventsPage"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "events"
+        ]
+      }
+    },
     "/api/me/github": {
       "delete": {
         "operationId": "githubDisconnect",
@@ -3752,6 +3911,10 @@
     {
       "description": "Authenticated user",
       "name": "me"
+    },
+    {
+      "description": "Activity-feed events",
+      "name": "events"
     },
     {
       "description": "GitHub integration",
