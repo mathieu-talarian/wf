@@ -7,6 +7,8 @@
 
 ## Build & verify
 - Lint gate (CI): `cargo clippy --all --all-targets --locked -- -D warnings` — run this, not plain clippy.
+- clippy.toml sets `too-many-lines-threshold = 25` — every function ≤25 lines; decompose into helpers up front.
+- HTTP tests use wiremock: `GithubClient::with_base(token, mock_uri)` is the GitHub test seam; `JiraClient` is mockable via `JiraCreds.site_url`. Pin query params/body in matchers (unmatched mock = silent 404).
 - Tests: `cargo test --workspace`. Build: `cargo build --workspace`.
 - `#[cfg(test)] mod tests` must be the LAST item in a file (clippy `items-after-test-module`).
 - Public types with a `new()` need a `Default` impl too (clippy `new_without_default` fails under `-D warnings`).
@@ -22,6 +24,7 @@
 ### Event backbone (A1)
 - `events` + `sync_state` tables (sea-orm-migration DDL). Apply: `cargo run -p migration -- up` (session pooler only — see Database note).
 - Tick logic in `wf-sync` (`run_tick`): reconcile scopes → claim due rows (`FOR UPDATE SKIP LOCKED`) → poll → normalize → insert.
+- Pollers fetch page-1 DESC + filter client-side against the compound cursor — do NOT switch to absolute JQL `updated >=` filters: Jira interprets JQL timestamps in the *account's* timezone (correctness trap; see A1 spec appendix).
 - `POST /internal/tick` at **root** (not `/api`); auth: `X-Internal-Token` = `INTERNAL_TICK_TOKEN` env (required at boot); not in OpenAPI spec.
 - Poll config envs (all have defaults): `POLL_INTERVAL_SECS` (120), `TICK_BATCH_SIZE` (50), `TICK_BUDGET_MS` (30000), `TICK_LEASE_SECS` (90).
 - Live smoke: `cargo run -p wf-sync --example tick_smoke` (needs `.env` + connected user).
@@ -31,15 +34,19 @@
 - `DATABASE_URL` must be the **session pooler** (`...pooler.supabase.com:5432`).
   The transaction pooler (6543) breaks SeaORM/sqlx with `42P05` even with `statement_cache_capacity(0)`; the direct host (`db.<ref>.supabase.co`) is IPv6-only.
 - Raw SQL in sea-orm 2.0: `db.query_one_raw(stmt)` / `query_all_raw` (the generic `query_one` is for query-builders).
+- `sync_state.cursor`: `CURSOR` is a Postgres reserved word — always write it quoted (`"cursor"`) in raw SQL/DDL (SeaORM entities quote automatically).
+- `events.payload` keys `issueKey`/`statusId` are load-bearing: queried by SQL (`payload->>'issueKey'`) in `events/crud.rs` — renaming them in `wf-sync::normalize` breaks the Jira prev-status lookup.
 
 ## Env & running
 - `.env` is auto-loaded via dotenvy: `cargo run -p wf-api` works without sourcing. `.env` is gitignored.
 - Live smoke harnesses (need `.env` + real data): `cargo run -p wf-db --example {phase0,gh_validate,gh_repo,gh_dashboard,gh_repo_write}`.
+- Web client: `../workflow` (React 19 + TanStack Router/Query + Mantine, Orval-generated client). Sync API types there: `yarn api:spec && yarn api:gen`. Its gates are `yarn type`/`lint`/`build` — it has NO test framework; don't add one.
 
 ## Dependency feature gotchas
 - `jsonwebtoken` → `features=["rust_crypto"]` (else runtime "CryptoProvider" panic).
 - `reqwest` → `query` feature for `RequestBuilder::query`; TLS feature is `rustls`.
 - `sqlx` → `runtime-tokio` + `tls-rustls-ring`. `getrandom` → `fill()` (not `getrandom()`).
+- `Uuid::new_v4()` needs an explicit `uuid = { version = "1", features = ["v4"] }` — sea-orm's re-export doesn't enable `v4`.
 - OpenTelemetry is 0.32: use `SdkTracerProvider` / `Resource::builder()` / `with_batch_exporter(exporter)` (no runtime arg). `opentelemetry-otlp` exports over **gRPC** (`grpc-tonic`) to the collector on `:4317` (`.with_tonic()`, base endpoint, no `/v1/*` path). tonic needs a Tokio runtime — the `#[actix_web::main]` entrypoint provides it — but the default batch processor still needs no `rt-tokio` SDK feature.
 
 ## Deployment (Cloud Run)
