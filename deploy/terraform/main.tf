@@ -42,6 +42,7 @@ locals {
   app_secret_ids = toset([
     var.database_url_secret_id,
     var.github_token_encryption_key_secret_id,
+    var.internal_tick_token_secret_id,
   ])
 }
 

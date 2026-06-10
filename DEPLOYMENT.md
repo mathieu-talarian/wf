@@ -40,6 +40,8 @@ printf '%s' 'postgres://USER:PASS@aws-0-REGION.pooler.supabase.com:5432/postgres
   | gcloud secrets versions add wf-database-url --data-file=- --project=workflow-497713
 printf '%s' 'BASE64_32_BYTE_KEY' \
   | gcloud secrets versions add wf-github-token-encryption-key --data-file=- --project=workflow-497713
+printf '%s' "$(openssl rand -hex 32)" \
+  | gcloud secrets versions add wf-internal-tick-token --data-file=- --project=workflow-497713
 ```
 
 ## Deploy
@@ -77,10 +79,13 @@ terraform -chdir=deploy/terraform apply -var enable_alerts=true
 ## Tick scheduling
 
 `POST /internal/tick` is called by Cloud Scheduler every 2 minutes. The
-`INTERNAL_TICK_TOKEN` secret is stored in Secret Manager and injected into the
-running container via `service.yaml` (same pattern as `DATABASE_URL`).
+`INTERNAL_TICK_TOKEN` env var is sourced from a Secret Manager secret named
+`wf-internal-tick-token`. Terraform creates the secret container (alongside
+`wf-database-url` and `wf-github-token-encryption-key`), and `service.yaml`
+injects it into the container as a `secretKeyRef` with the same pattern as
+`DATABASE_URL`.
 
-Add the secret value once:
+Add the secret value once (after `terraform apply`):
 
 ```bash
 printf '%s' "$(openssl rand -hex 32)" \
