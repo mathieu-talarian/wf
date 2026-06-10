@@ -103,6 +103,7 @@ async fn main() -> std::io::Result<()> {
             .wrap(cors)
             .wrap(RequestTracing::new())
             .route("/healthz", web::get().to(healthz))
+            .configure(routes::internal::configure)
             .service(web::scope("/api").configure(routes::configure))
             .default_service(web::route().to(not_found))
     })

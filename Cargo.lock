@@ -4605,6 +4605,7 @@ dependencies = [
  "wf-db",
  "wf-github",
  "wf-jira",
+ "wf-sync",
 ]
 
 [[package]]

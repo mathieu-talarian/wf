@@ -1,6 +1,7 @@
 use actix_web::web;
 
 pub mod health;
+pub mod internal;
 pub mod me;
 
 /// Registers all routes under the `/api` scope (migration plan §14). Later
