@@ -2220,7 +2220,7 @@
             }
           },
           {
-            "description": "Filter by `event_type` prefix (e.g. `\"pr.\"` matches `\"pr.opened\"`).",
+            "description": "Filter by `event_type` prefix, matched literally (e.g.\n`\"github.pull_request.\"`). LIKE wildcards are escaped in the DB layer.",
             "in": "query",
             "name": "typePrefix",
             "required": false,

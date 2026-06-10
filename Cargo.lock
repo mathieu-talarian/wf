@@ -4637,6 +4637,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "uuid",
  "wf-core",
  "wf-github",
 ]

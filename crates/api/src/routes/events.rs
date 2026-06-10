@@ -27,7 +27,8 @@ pub(crate) struct ListEventsQuery {
     pub limit: Option<u32>,
     /// Filter by exact `source` value (e.g. `"github"`, `"jira"`).
     pub source: Option<String>,
-    /// Filter by `event_type` prefix (e.g. `"pr."` matches `"pr.opened"`).
+    /// Filter by `event_type` prefix, matched literally (e.g.
+    /// `"github.pull_request."`). LIKE wildcards are escaped in the DB layer.
     pub type_prefix: Option<String>,
     /// Filter by exact `scope_key` value (e.g. a Jira project key).
     pub scope_key: Option<String>,
@@ -104,20 +105,6 @@ fn user_id(user: &AuthUser) -> Result<Uuid, AppError> {
     Uuid::parse_str(&user.0.id).map_err(|e| AppError::internal(anyhow::anyhow!(e)))
 }
 
-/// Validate that a `type_prefix` value does not contain unescaped LIKE
-/// wildcards. `starts_with` in sea-orm 2.0.0-rc.40 builds `LIKE '<prefix>%'`
-/// without escaping input, so a `%` or `_` in the prefix would widen the
-/// match silently. Callers supply these from a fixed vocabulary so this only
-/// fires on unexpected / adversarial input.
-fn validate_prefix(s: &str) -> Result<(), AppError> {
-    if s.contains('%') || s.contains('_') {
-        return Err(AppError::validation(
-            "typePrefix must not contain '%' or '_'",
-        ));
-    }
-    Ok(())
-}
-
 #[utoipa::path(
     get,
     path = "/api/me/events",
@@ -132,10 +119,6 @@ pub(crate) async fn list_events(
     user: AuthUser,
     query: web::Query<ListEventsQuery>,
 ) -> Result<HttpResponse, AppError> {
-    if let Some(prefix) = &query.type_prefix {
-        validate_prefix(prefix)?;
-    }
-
     let uid = user_id(&user)?;
     let filter = to_filter(&query);
     let limit = filter.limit as usize;
@@ -234,25 +217,6 @@ mod tests {
         let (page, cursor) = page_and_cursor(rows, 3);
         assert_eq!(cursor, None);
         assert_eq!(page.len(), 3);
-    }
-
-    // ── validate_prefix ────────────────────────────────────────────────────
-
-    #[test]
-    fn validate_prefix_rejects_percent() {
-        assert!(validate_prefix("pr.%").is_err());
-    }
-
-    #[test]
-    fn validate_prefix_rejects_underscore() {
-        assert!(validate_prefix("pr._opened").is_err());
-    }
-
-    #[test]
-    fn validate_prefix_accepts_clean_value() {
-        assert!(validate_prefix("pr.").is_ok());
-        assert!(validate_prefix("github.").is_ok());
-        assert!(validate_prefix("").is_ok());
     }
 
     // ── to_filter ──────────────────────────────────────────────────────────

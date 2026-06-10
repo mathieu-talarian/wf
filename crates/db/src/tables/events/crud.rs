@@ -8,7 +8,7 @@ use sea_orm::sea_query::OnConflict;
 use sea_orm::ActiveValue::{NotSet, Set};
 use sea_orm::{
     ColumnTrait, ConnectionTrait, DatabaseConnection, DbBackend, DbErr, EntityTrait, QueryFilter,
-    QueryOrder, QuerySelect, Statement,
+    QueryOrder, QuerySelect, Select, Statement,
 };
 
 use super::entity as events;
@@ -82,10 +82,40 @@ pub struct ListEventsFilter {
     pub limit: u64,
     /// Exact match on `source`.
     pub source: Option<String>,
-    /// `event_type LIKE '<prefix>%'` — caller must have already rejected `%`/`_`.
+    /// `event_type LIKE '<prefix>%'` with the prefix matched **literally**:
+    /// LIKE wildcards (`%`, `_`, `\`) are escaped here. Real event types
+    /// contain `_` (`github.pull_request.`), so rejecting them upstream is
+    /// not an option.
     pub type_prefix: Option<String>,
     /// Exact match on `scope_key`.
     pub scope_key: Option<String>,
+}
+
+/// Escapes LIKE wildcards so a prefix matches literally. Postgres's default
+/// LIKE escape character is `\` (no `ESCAPE` clause needed).
+fn escape_like(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")
+}
+
+/// Builds the [`list_events_page`] query (shared with the SQL-shape tests so
+/// they exercise the production builder, not a copy).
+fn list_events_query(user_id: Uuid, filter: &ListEventsFilter) -> Select<events::Entity> {
+    let mut q = events::Entity::find().filter(events::Column::UserId.eq(user_id));
+
+    if let Some(before) = filter.before {
+        q = q.filter(events::Column::Id.lt(before));
+    }
+    if let Some(source) = &filter.source {
+        q = q.filter(events::Column::Source.eq(source.clone()));
+    }
+    if let Some(prefix) = &filter.type_prefix {
+        q = q.filter(events::Column::EventType.starts_with(escape_like(prefix)));
+    }
+    if let Some(scope) = &filter.scope_key {
+        q = q.filter(events::Column::ScopeKey.eq(scope.clone()));
+    }
+
+    q.order_by_desc(events::Column::Id).limit(filter.limit + 1)
 }
 
 /// Returns up to `filter.limit` events for `user_id`, newest-first.
@@ -97,25 +127,7 @@ pub async fn list_events_page(
     user_id: Uuid,
     filter: &ListEventsFilter,
 ) -> Result<Vec<events::Model>, DbErr> {
-    let mut q = events::Entity::find().filter(events::Column::UserId.eq(user_id));
-
-    if let Some(before) = filter.before {
-        q = q.filter(events::Column::Id.lt(before));
-    }
-    if let Some(source) = &filter.source {
-        q = q.filter(events::Column::Source.eq(source.clone()));
-    }
-    if let Some(prefix) = &filter.type_prefix {
-        q = q.filter(events::Column::EventType.starts_with(prefix.clone()));
-    }
-    if let Some(scope) = &filter.scope_key {
-        q = q.filter(events::Column::ScopeKey.eq(scope.clone()));
-    }
-
-    q.order_by_desc(events::Column::Id)
-        .limit(filter.limit + 1)
-        .all(db)
-        .await
+    list_events_query(user_id, filter).all(db).await
 }
 
 /// Builds the `ActiveModel` for [`insert_ignore_dups`]; `id`/`ingested_at`
@@ -139,7 +151,7 @@ fn active_model(input: InsertEventInput) -> events::ActiveModel {
 
 #[cfg(test)]
 mod tests {
-    use sea_orm::{DbBackend, EntityTrait, QueryFilter, QueryOrder, QuerySelect, QueryTrait};
+    use sea_orm::{DbBackend, QueryTrait};
 
     use super::*;
 
@@ -153,26 +165,10 @@ mod tests {
         }
     }
 
-    /// Verify that the query builder produces the expected SQL clauses.
-    /// We build the Select statement without executing it so no DB is needed.
+    /// Renders the production query builder to SQL without executing it,
+    /// so the SQL-shape tests need no DB.
     fn sql_for(user_id: Uuid, filter: &ListEventsFilter) -> String {
-        let mut q = events::Entity::find().filter(events::Column::UserId.eq(user_id));
-        if let Some(before) = filter.before {
-            q = q.filter(events::Column::Id.lt(before));
-        }
-        if let Some(source) = &filter.source {
-            q = q.filter(events::Column::Source.eq(source.clone()));
-        }
-        if let Some(prefix) = &filter.type_prefix {
-            q = q.filter(events::Column::EventType.starts_with(prefix.clone()));
-        }
-        if let Some(scope) = &filter.scope_key {
-            q = q.filter(events::Column::ScopeKey.eq(scope.clone()));
-        }
-        q.order_by_desc(events::Column::Id)
-            .limit(filter.limit + 1)
-            .build(DbBackend::Postgres)
-            .to_string()
+        list_events_query(user_id, filter).build(DbBackend::Postgres).to_string()
     }
 
     #[test]
@@ -206,6 +202,23 @@ mod tests {
         let filter = ListEventsFilter { type_prefix: Some("pr.".into()), ..base_filter() };
         let sql = sql_for(uid, &filter);
         assert!(sql.contains("LIKE 'pr.%'"));
+    }
+
+    #[test]
+    fn type_prefix_escapes_like_wildcards() {
+        // Real event types contain `_` (github.pull_request.*); the pattern
+        // must match it literally, not as a single-char wildcard.
+        let uid = Uuid::new_v4();
+        let filter =
+            ListEventsFilter { type_prefix: Some("github.pull_request.".into()), ..base_filter() };
+        // sea_query renders strings containing `\` as Postgres E-strings,
+        // doubling each backslash — `E'...\\_...'` reaches LIKE as `\_`.
+        let sql = sql_for(uid, &filter);
+        assert!(sql.contains(r"LIKE E'github.pull\\_request.%'"), "got: {sql}");
+
+        let hostile = ListEventsFilter { type_prefix: Some("%_\\".into()), ..base_filter() };
+        let sql = sql_for(uid, &hostile);
+        assert!(sql.contains(r"LIKE E'\\%\\_\\\\%'"), "got: {sql}");
     }
 
     #[test]

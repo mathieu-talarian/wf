@@ -22,6 +22,10 @@ chrono = { workspace = true }
 serde_json = { workspace = true }
 
 [dev-dependencies]
+# Tests build Uuids directly; sea-orm's re-export doesn't enable `v4`, so
+# without this `cargo test -p wf-db` only compiles via feature unification
+# with other workspace crates.
+uuid = { version = "1", features = ["v4"] }
 # Phase 0 spike harness + GitHub live-validate example.
 tokio = { workspace = true }
 anyhow = { workspace = true }

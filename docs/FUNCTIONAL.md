@@ -221,7 +221,7 @@ Your recorded events, **newest first**, paged. All query parameters are optional
 | `limit` | Page size, 1–100 (default 50). |
 | `before` | Cursor for the next page — pass the `nextBefore` from the previous response. |
 | `source` | Only one integration: `github` or `jira`. |
-| `typePrefix` | Only event types starting with this prefix, e.g. `github.pull_request.` or `jira.issue.` (literal prefix — `%`/`_` are rejected). |
+| `typePrefix` | Only event types starting with this prefix, e.g. `github.pull_request.` or `jira.issue.` (matched literally — no wildcards). |
 | `scopeKey` | Only one repo (`owner/name`) or Jira project key. |
 
 Returns `{ "events": [...], "nextBefore": ... }`. Each event has: `id`, `source`, `type` (e.g. `github.workflow_run.completed`, `github.pull_request.opened`/`merged`/`closed`, `jira.issue.created`/`transitioned`), `scopeKey`, `actor` (who did it), `title`, `url` (link to the PR/run/issue), `occurredAt`, and a type-specific `payload` (e.g. a run's `conclusion`, an issue's `statusName`). `nextBefore` is `null` when you've reached the end of your history.

@@ -236,7 +236,7 @@ Writes:
 
 | Method & path | Purpose |
 |---|---|
-| `GET /api/me/events` | The user's normalized events, newest-first, **keyset-paginated over `events.id`** (`before` cursor ← response `nextBefore`; `limit` 1–100, default 50). Filters: `source` (`github`/`jira`), `typePrefix` (literal prefix match — `%`/`_` rejected to keep sea-orm's `LIKE` safe), `scopeKey`. Backs the web client's `/activity` page. Contract pinned by a wire-key test (`type`/`occurredAt`, not `eventType`). |
+| `GET /api/me/events` | The user's normalized events, newest-first, **keyset-paginated over `events.id`** (`before` cursor ← response `nextBefore`; `limit` 1–100, default 50). Filters: `source` (`github`/`jira`), `typePrefix` (literal prefix match — LIKE wildcards `%`/`_`/`\` are escaped in `wf-db`), `scopeKey`. Backs the web client's `/activity` page. Contract pinned by a wire-key test (`type`/`occurredAt`, not `eventType`). |
 
 ---
 
