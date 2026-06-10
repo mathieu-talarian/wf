@@ -8,9 +8,10 @@ use wf_sync::TickOptions;
 use crate::error::AppError;
 use crate::state::AppState;
 
-/// Constant-shape comparison of the provided header against the configured
-/// secret. (Both sides are operator-controlled secrets; a timing-safe compare
-/// is not load-bearing here, but reject on any mismatch.)
+/// Plain equality, not constant-time: the header is attacker-controlled, so
+/// `==` can in principle leak prefix-match timing. Accepted for v1 (HTTPS,
+/// low-value oracle, OIDC is the documented hardening path — spec §4.1).
+/// Rejects when `expected` is empty (misconfigured secret → deny-all).
 fn token_ok(provided: Option<&str>, expected: &str) -> bool {
     provided.is_some_and(|p| !expected.is_empty() && p == expected)
 }
@@ -21,7 +22,7 @@ fn tick_options(state: &AppState) -> TickOptions {
         budget: std::time::Duration::from_millis(state.config.tick_budget_ms),
         lease_secs: state.config.tick_lease_secs,
         poll_interval_secs: state.config.poll_interval_secs,
-        owner: format!("api-{}-{}", std::process::id(), chrono::Utc::now().timestamp_millis()),
+        owner: format!("api-{}", uuid::Uuid::new_v4()),
         github_base: None,
     }
 }

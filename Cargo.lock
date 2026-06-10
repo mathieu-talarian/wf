@@ -4601,6 +4601,7 @@ dependencies = [
  "tracing-opentelemetry",
  "tracing-subscriber",
  "utoipa",
+ "uuid",
  "wf-core",
  "wf-db",
  "wf-github",
