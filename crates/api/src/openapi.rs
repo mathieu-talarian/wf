@@ -58,7 +58,8 @@ Errors are returned as RFC 9457 `application/problem+json` carrying a stable \
         (name = "events", description = "Activity-feed events"),
         (name = "github", description = "GitHub integration"),
         (name = "jira", description = "Jira integration"),
-        (name = "slack", description = "Slack integration (QA channels)")
+        (name = "slack", description = "Slack integration (QA channels)"),
+        (name = "notes", description = "Per-ticket notes and reminders")
     ),
     paths(
         crate::routes::health::health,
@@ -122,6 +123,12 @@ Errors are returned as RFC 9457 `application/problem+json` carrying a stable \
         crate::slack::routes::threads,
         crate::slack::routes::reply,
         crate::slack::routes::mark_read,
+        // Notes + reminders
+        crate::notes::routes::get_note,
+        crate::notes::routes::put_note,
+        crate::notes::routes::list_reminders,
+        crate::notes::routes::reminder_done,
+        crate::notes::routes::reminder_snooze,
     ),
     components(schemas(
         // wf-api response + body DTOs
@@ -146,6 +153,12 @@ Errors are returned as RFC 9457 `application/problem+json` carrying a stable \
         crate::slack::routes::SlackChannelsBody,
         crate::slack::routes::SlackReplyBody,
         crate::slack::routes::SlackMarkReadBody,
+        crate::notes::routes::NoteDetail,
+        crate::notes::routes::NoteBacklink,
+        crate::notes::routes::Reminder,
+        crate::notes::routes::PutNoteBody,
+        crate::notes::routes::ReminderRefBody,
+        crate::notes::routes::ReminderSnoozeBody,
         crate::github::routes::TokenBody,
         crate::github::routes::ReposBody,
         crate::github::routes::PullsBody,

@@ -8,6 +8,7 @@ mod error;
 mod github;
 mod jira;
 mod middleware;
+mod notes;
 mod openapi;
 mod routes;
 mod scheduler;
