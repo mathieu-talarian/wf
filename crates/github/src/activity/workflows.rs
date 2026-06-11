@@ -143,6 +143,19 @@ pub async fn list_workflow_runs(
     Ok(runs.workflow_runs.into_iter().map(to_run).collect())
 }
 
+/// Re-run a workflow run (`POST …/actions/runs/{id}/rerun`) — backs the strip
+/// pills' `re-run` link and the slide-over's `re-run checks`.
+pub async fn rerun_workflow_run(
+    token: &str,
+    r: &RepoRef,
+    run_id: i64,
+) -> Result<(), GithubError> {
+    let client = GithubClient::new(token);
+    let path = format!("/repos/{}/{}/actions/runs/{run_id}/rerun", r.owner, r.repo);
+    write_send(client.request(Method::POST, &path), "Failed to re-run the workflow run.").await?;
+    Ok(())
+}
+
 /// Trigger a `workflow_dispatch` (port of `dispatchWorkflow`). 204 on success;
 /// failures pass the status through as a write error.
 pub async fn dispatch_workflow(

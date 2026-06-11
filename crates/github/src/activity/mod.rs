@@ -7,6 +7,7 @@ pub mod branches_graphql;
 pub mod environments;
 pub mod inputs;
 pub mod pulls;
+pub mod refs;
 pub mod types;
 pub mod workflows;
 pub mod write;
@@ -20,4 +21,5 @@ pub use types::{
     GithubMergePullResult, GithubRepoBranches, GithubRepoWorkflows, GithubWorkflowInput,
     GithubWorkflowInputType, GithubWorkflowInputs, GithubWorkflowSummary,
 };
-pub use workflows::{dispatch_workflow, fetch_workflows, list_workflow_runs};
+pub use refs::{create_branch, GithubBranchCreated};
+pub use workflows::{dispatch_workflow, fetch_workflows, list_workflow_runs, rerun_workflow_run};

@@ -467,12 +467,92 @@ pub(crate) async fn edit_issue(
     Ok(HttpResponse::Ok().json(serde_json::json!({ "ok": true })))
 }
 
+/// Hub board columns ↔ Jira statuses mapping (Settings card). Stored as jsonb
+/// on the connection row; a sensible default is served until the user edits it.
+#[derive(serde::Serialize, Deserialize, Clone, utoipa::ToSchema)]
+pub(crate) struct JiraBoardMapping {
+    pub columns: Vec<JiraBoardColumn>,
+}
+
+#[derive(serde::Serialize, Deserialize, Clone, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct JiraBoardColumn {
+    pub id: String,
+    pub title: String,
+    pub jira_statuses: Vec<String>,
+}
+
+pub(crate) fn default_board_mapping() -> JiraBoardMapping {
+    let col = |id: &str, title: &str, statuses: &[&str]| JiraBoardColumn {
+        id: id.to_string(),
+        title: title.to_string(),
+        jira_statuses: statuses.iter().map(|s| (*s).to_string()).collect(),
+    };
+    JiraBoardMapping {
+        columns: vec![
+            col("todo", "To Do", &["To Do", "Backlog", "Open"]),
+            col("in-progress", "In Progress", &["In Progress"]),
+            col("in-review", "In Review", &["In Review", "Code Review"]),
+            col("testing", "Testing", &["Testing"]),
+            col("qa", "QA", &["QA"]),
+            col("done", "Done", &["Done", "Closed", "Resolved"]),
+        ],
+    }
+}
+
+pub(crate) async fn load_board_mapping(
+    state: &AppState,
+    uid: Uuid,
+) -> Result<JiraBoardMapping, AppError> {
+    let row = wf_db::tables::jira_pat_connections::select_row(&state.db, uid).await?;
+    let stored = row
+        .and_then(|r| r.board_mapping)
+        .and_then(|v| serde_json::from_value::<JiraBoardMapping>(v).ok());
+    Ok(stored.unwrap_or_else(default_board_mapping))
+}
+
+#[utoipa::path(
+    get, path = "/api/me/jira/board-mapping", operation_id = "jiraBoardMapping", tag = "jira",
+    security(("bearer" = [])),
+    responses((status = 200, body = JiraBoardMapping))
+)]
+/// GET /me/jira/board-mapping — the hub board's column ↔ status mapping.
+pub(crate) async fn board_mapping(
+    state: web::Data<AppState>,
+    user: AuthUser,
+) -> Result<HttpResponse, AppError> {
+    let mapping = load_board_mapping(&state, user_id(&user)?).await?;
+    Ok(HttpResponse::Ok().json(mapping))
+}
+
+#[utoipa::path(
+    put, path = "/api/me/jira/board-mapping", operation_id = "jiraSetBoardMapping", tag = "jira",
+    security(("bearer" = [])), request_body = JiraBoardMapping,
+    responses((status = 200, body = JiraBoardMapping))
+)]
+/// PUT /me/jira/board-mapping — replace the mapping.
+pub(crate) async fn set_board_mapping(
+    state: web::Data<AppState>,
+    user: AuthUser,
+    body: web::Json<JiraBoardMapping>,
+) -> Result<HttpResponse, AppError> {
+    if body.columns.is_empty() {
+        return Err(AppError::validation("`columns` must not be empty."));
+    }
+    let json = serde_json::to_value(&*body).map_err(|e| AppError::internal(anyhow::anyhow!(e)))?;
+    wf_db::tables::jira_pat_connections::set_board_mapping(&state.db, user_id(&user)?, json)
+        .await?;
+    Ok(HttpResponse::Ok().json(&*body))
+}
+
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.route("/me/jira", web::get().to(status))
         .route("/me/jira/token", web::post().to(connect))
         .route("/me/jira/token/validate", web::post().to(validate))
         .route("/me/jira", web::delete().to(disconnect))
         .route("/me/jira/projects", web::put().to(set_projects))
+        .route("/me/jira/board-mapping", web::get().to(board_mapping))
+        .route("/me/jira/board-mapping", web::put().to(set_board_mapping))
         // Data reads
         .route("/me/jira/dashboard", web::get().to(dashboard))
         .route("/me/jira/queue", web::get().to(queue))

@@ -97,6 +97,29 @@ pub async fn dispatch(
     Ok(wf_github::dispatch_workflow(&pat.token, &r, workflow_id, git_ref, inputs).await?)
 }
 
+/// `POST /me/github/workflow/rerun` — re-run a (failed) workflow run.
+pub async fn rerun(
+    state: &AppState,
+    user_id: Uuid,
+    r: RepoRef,
+    run_id: i64,
+) -> Result<(), AppError> {
+    let pat = require_pat(state, user_id).await?;
+    Ok(wf_github::rerun_workflow_run(&pat.token, &r, run_id).await?)
+}
+
+/// `POST /me/github/branch` — create a branch off `from_ref` / default branch.
+pub async fn create_branch(
+    state: &AppState,
+    user_id: Uuid,
+    r: RepoRef,
+    name: &str,
+    from_ref: Option<&str>,
+) -> Result<wf_github::GithubBranchCreated, AppError> {
+    let pat = require_pat(state, user_id).await?;
+    Ok(wf_github::create_branch(&pat.token, &r, name, from_ref).await?)
+}
+
 /// `POST /me/github/pulls` (port of `runCreatePull`).
 pub async fn create_pull(
     state: &AppState,

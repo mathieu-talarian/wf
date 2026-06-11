@@ -421,6 +421,68 @@ pub(crate) async fn dispatch_route(
     Ok(HttpResponse::Ok().json(serde_json::json!({ "ok": true })))
 }
 
+#[derive(Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RerunBody {
+    /// `owner/name`
+    repo: String,
+    run_id: i64,
+}
+
+#[derive(Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct CreateBranchBody {
+    /// `owner/name`
+    repo: String,
+    name: String,
+    from_ref: Option<String>,
+}
+
+/// Splits an `owner/name` full repo name into a `RepoRef`.
+fn full_repo_ref(full: &str) -> Result<RepoRef, AppError> {
+    let (owner, repo) = full
+        .split_once('/')
+        .ok_or_else(|| AppError::validation("`repo` must be `owner/name`."))?;
+    Ok(ref_of(owner, repo))
+}
+
+#[utoipa::path(
+    post, path = "/api/me/github/workflow/rerun", operation_id = "githubWorkflowRerun", tag = "github",
+    security(("bearer" = [])), request_body = RerunBody,
+    responses((status = 200, body = crate::dto::OkResponse))
+)]
+/// POST /me/github/workflow/rerun — re-run a workflow run.
+pub(crate) async fn rerun_route(
+    state: web::Data<AppState>,
+    user: AuthUser,
+    body: web::Json<RerunBody>,
+) -> Result<HttpResponse, AppError> {
+    activity::rerun(&state, user_id(&user)?, full_repo_ref(&body.repo)?, body.run_id).await?;
+    Ok(HttpResponse::Ok().json(serde_json::json!({ "ok": true })))
+}
+
+#[utoipa::path(
+    post, path = "/api/me/github/branch", operation_id = "githubCreateBranch", tag = "github",
+    security(("bearer" = [])), request_body = CreateBranchBody,
+    responses((status = 200, body = wf_github::GithubBranchCreated))
+)]
+/// POST /me/github/branch — create a branch (default base: default branch).
+pub(crate) async fn create_branch_route(
+    state: web::Data<AppState>,
+    user: AuthUser,
+    body: web::Json<CreateBranchBody>,
+) -> Result<HttpResponse, AppError> {
+    let created = activity::create_branch(
+        &state,
+        user_id(&user)?,
+        full_repo_ref(&body.repo)?,
+        &body.name,
+        body.from_ref.as_deref(),
+    )
+    .await?;
+    Ok(HttpResponse::Ok().json(created))
+}
+
 #[utoipa::path(
     post, path = "/api/me/github/pulls", operation_id = "githubCreatePull", tag = "github",
     security(("bearer" = [])), request_body = CreatePullBody,
@@ -532,6 +594,8 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .route("/me/github/repo/branches", web::get().to(repo_branches_route))
         .route("/me/github/repo/environments", web::get().to(environments_route))
         .route("/me/github/workflow/dispatch", web::post().to(dispatch_route))
+        .route("/me/github/workflow/rerun", web::post().to(rerun_route))
+        .route("/me/github/branch", web::post().to(create_branch_route))
         .route("/me/github/pulls", web::post().to(create_pull_route))
         .route("/me/github/pull/merge", web::post().to(merge_pull_route))
         .route("/me/github/pull/close", web::post().to(close_pull_route))

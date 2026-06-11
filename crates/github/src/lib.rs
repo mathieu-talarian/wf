@@ -11,11 +11,12 @@ pub mod types;
 pub mod validate;
 
 pub use activity::{
-    close_pull, create_pull, dispatch_workflow, fetch_branch_prompts, fetch_workflow_inputs,
-    fetch_workflows, list_environments, list_repo_branch_names, list_workflow_runs, merge_pull,
-    GithubBranchPrompt, GithubCreatePullInput, GithubCreatePullResult, GithubMergeMethod,
-    GithubMergePullResult, GithubRepoBranches, GithubRepoWorkflows, GithubWorkflowInput,
-    GithubWorkflowInputType, GithubWorkflowInputs, GithubWorkflowSummary,
+    close_pull, create_branch, create_pull, dispatch_workflow, fetch_branch_prompts,
+    fetch_workflow_inputs, fetch_workflows, list_environments, list_repo_branch_names,
+    list_workflow_runs, merge_pull, rerun_workflow_run, GithubBranchCreated, GithubBranchPrompt,
+    GithubCreatePullInput, GithubCreatePullResult, GithubMergeMethod, GithubMergePullResult,
+    GithubRepoBranches, GithubRepoWorkflows, GithubWorkflowInput, GithubWorkflowInputType,
+    GithubWorkflowInputs, GithubWorkflowSummary,
 };
 pub use client::{parse_repo_ref, GithubClient, RepoRef};
 pub use poll::{list_pulls_page, list_workflow_runs_page, GithubActor, PolledPullRequest, PolledWorkflowRun};

@@ -17,12 +17,6 @@ pub struct ParsedReminder {
     pub due_at: DateTime<Utc>,
 }
 
-pub struct ParsedLink {
-    pub to_ticket: String,
-    /// The whole line containing the link (the backlink snippet).
-    pub snippet: String,
-}
-
 fn wiki_link_regex() -> &'static regex::Regex {
     static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     RE.get_or_init(|| {
