@@ -57,7 +57,8 @@ Errors are returned as RFC 9457 `application/problem+json` carrying a stable \
         (name = "me", description = "Authenticated user"),
         (name = "events", description = "Activity-feed events"),
         (name = "github", description = "GitHub integration"),
-        (name = "jira", description = "Jira integration")
+        (name = "jira", description = "Jira integration"),
+        (name = "slack", description = "Slack integration (QA channels)")
     ),
     paths(
         crate::routes::health::health,
@@ -111,6 +112,16 @@ Errors are returned as RFC 9457 `application/problem+json` carrying a stable \
         crate::jira::routes::worklog,
         crate::jira::routes::create_issue,
         crate::jira::routes::edit_issue,
+        // Slack
+        crate::slack::routes::status,
+        crate::slack::routes::connect,
+        crate::slack::routes::validate,
+        crate::slack::routes::disconnect,
+        crate::slack::routes::channels,
+        crate::slack::routes::set_channels,
+        crate::slack::routes::threads,
+        crate::slack::routes::reply,
+        crate::slack::routes::mark_read,
     ),
     components(schemas(
         // wf-api response + body DTOs
@@ -124,6 +135,17 @@ Errors are returned as RFC 9457 `application/problem+json` carrying a stable \
         crate::github::summary::GithubConnectionSummary,
         crate::github::dashboard::RepoSelection,
         crate::jira::summary::JiraConnectionSummary,
+        crate::slack::summary::SlackConnectionSummary,
+        crate::slack::summary::SlackChannelRef,
+        crate::slack::summary::SlackChannelOption,
+        crate::slack::summary::SlackThreadsResult,
+        crate::slack::summary::SlackThread,
+        crate::slack::summary::SlackMessage,
+        crate::slack::summary::SlackAuthor,
+        crate::slack::routes::SlackTokenBody,
+        crate::slack::routes::SlackChannelsBody,
+        crate::slack::routes::SlackReplyBody,
+        crate::slack::routes::SlackMarkReadBody,
         crate::github::routes::TokenBody,
         crate::github::routes::ReposBody,
         crate::github::routes::PullsBody,

@@ -88,6 +88,23 @@ pub async fn list_for_ticket(
         .await
 }
 
+/// One thread's rows (any ticket), oldest first — used to inherit channel
+/// name / ticket key when echoing a posted reply.
+pub async fn list_for_ticket_thread(
+    db: &DatabaseConnection,
+    user_id: Uuid,
+    channel_id: &str,
+    thread_ts: &str,
+) -> Result<Vec<msg::Model>, DbErr> {
+    msg::Entity::find()
+        .filter(msg::Column::UserId.eq(user_id))
+        .filter(msg::Column::ChannelId.eq(channel_id))
+        .filter(msg::Column::ThreadTs.eq(thread_ts))
+        .order_by_asc(msg::Column::PostedAt)
+        .all(db)
+        .await
+}
+
 /// Unread (non-bot) message counts per ticket key — the board's `💬 n unread`.
 pub async fn unread_counts(
     db: &DatabaseConnection,

@@ -40,6 +40,10 @@ enum ErrorKind {
     JiraWrite(JiraWriteError),
     #[error(transparent)]
     JiraNotConnected(JiraNotConnected),
+    #[error(transparent)]
+    Slack(wf_slack::SlackApiError),
+    #[error("slack not connected")]
+    SlackNotConnected,
     #[error("internal error: {0}")]
     Internal(anyhow::Error),
 }
@@ -149,6 +153,35 @@ fn jira_not_connected_parts() -> Parts {
     )
 }
 
+/// Token errors surface as 409 (the UI flips the connection pill and prompts a
+/// re-connect, per the hub contract); anything else is an upstream 502.
+fn slack_parts(e: &wf_slack::SlackApiError) -> Parts {
+    match e.token_state() {
+        wf_slack::SlackTokenState::Expiring | wf_slack::SlackTokenState::Invalid => Parts {
+            status: 409,
+            slug: "slack-token-rejected",
+            title: "Slack token rejected",
+            detail: e.message.clone(),
+            reason: e.code.clone(),
+        },
+        wf_slack::SlackTokenState::Unrelated => simple(
+            502,
+            "slack-request-failed",
+            "Slack request failed",
+            e.message.clone(),
+        ),
+    }
+}
+
+fn slack_not_connected_parts() -> Parts {
+    simple(
+        404,
+        "slack-not-connected",
+        "Slack not connected",
+        "No Slack connection exists for this user.".to_string(),
+    )
+}
+
 fn jira_api_parts() -> Parts {
     simple(
         502,
@@ -171,6 +204,8 @@ impl ErrorKind {
             ErrorKind::JiraNotConnected(_) => jira_not_connected_parts(),
             ErrorKind::JiraWrite(e) => jira_write_parts(e),
             ErrorKind::JiraApi(_) => jira_api_parts(),
+            ErrorKind::Slack(e) => slack_parts(e),
+            ErrorKind::SlackNotConnected => slack_not_connected_parts(),
         }
     }
 }
@@ -196,6 +231,9 @@ impl AppError {
     }
     pub fn internal(err: impl Into<anyhow::Error>) -> Self {
         Self::of(ErrorKind::Internal(err.into()))
+    }
+    pub fn slack_not_connected() -> Self {
+        Self::of(ErrorKind::SlackNotConnected)
     }
 
     fn of(kind: ErrorKind) -> Self {
@@ -265,6 +303,12 @@ impl From<JiraApiError> for AppError {
 impl From<JiraWriteError> for AppError {
     fn from(e: JiraWriteError) -> Self {
         Self::of(ErrorKind::JiraWrite(e))
+    }
+}
+
+impl From<wf_slack::SlackApiError> for AppError {
+    fn from(e: wf_slack::SlackApiError) -> Self {
+        Self::of(ErrorKind::Slack(e))
     }
 }
 

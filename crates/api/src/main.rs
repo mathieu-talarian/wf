@@ -11,6 +11,7 @@ mod middleware;
 mod openapi;
 mod routes;
 mod scheduler;
+mod slack;
 mod state;
 mod telemetry;
 
