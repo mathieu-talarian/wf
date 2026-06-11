@@ -145,6 +145,7 @@ mod tests {
     fn run(status: &str, conclusion: Option<&str>) -> PolledWorkflowRun {
         PolledWorkflowRun {
             id: 42,
+            workflow_id: None,
             run_attempt: 2,
             name: Some("CI".into()),
             display_title: Some("Fix build".into()),
@@ -171,6 +172,7 @@ mod tests {
     fn pr(state: &str, merged: bool) -> PolledPullRequest {
         PolledPullRequest {
             number: 7,
+            head: None,
             state: state.into(),
             title: Some("Add feature".into()),
             html_url: Some("https://x/pull/7".into()),

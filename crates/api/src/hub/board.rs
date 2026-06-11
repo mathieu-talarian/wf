@@ -350,9 +350,9 @@ fn aggregate_pr_states(prs: &[HubPrRef]) -> String {
         .filter(|p| p.state == "open" || p.state == "draft")
         .map(|p| p.check_state.as_str())
         .collect();
-    if open.iter().any(|s| *s == "failed") {
+    if open.contains(&"failed") {
         "failed".to_string()
-    } else if open.iter().any(|s| *s == "running") {
+    } else if open.contains(&"running") {
         "running".to_string()
     } else if !open.is_empty() && open.iter().all(|s| *s == "success") {
         "success".to_string()

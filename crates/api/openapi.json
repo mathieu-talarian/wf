@@ -1,6 +1,71 @@
 {
   "components": {
     "schemas": {
+      "AiDraft": {
+        "properties": {
+          "generatedAt": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "generatedAt"
+        ],
+        "type": "object"
+      },
+      "AiDraftReplyBody": {
+        "properties": {
+          "channelId": {
+            "type": "string"
+          },
+          "threadTs": {
+            "type": "string"
+          },
+          "ticketKey": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "ticketKey",
+          "channelId",
+          "threadTs"
+        ],
+        "type": "object"
+      },
+      "AiHandoffBody": {
+        "properties": {
+          "ticketKey": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "ticketKey"
+        ],
+        "type": "object"
+      },
+      "AiSettings": {
+        "properties": {
+          "morningBrief": {
+            "default": false,
+            "description": "Morning brief in the Needs-you inbox (+ inbox ranking, orphan\nsuggestions as they land).",
+            "type": "boolean"
+          },
+          "qaDraftReplies": {
+            "default": false,
+            "description": "`✦ draft reply` on QA threads.",
+            "type": "boolean"
+          },
+          "qaHandoffDrafts": {
+            "default": false,
+            "description": "Auto-draft the QA handoff message on move to Testing.",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
       "AssignBody": {
         "properties": {
           "accountId": {
@@ -69,6 +134,28 @@
           "siteUrl",
           "email",
           "token"
+        ],
+        "type": "object"
+      },
+      "CreateBranchBody": {
+        "properties": {
+          "fromRef": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "repo": {
+            "description": "`owner/name`",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo",
+          "name"
         ],
         "type": "object"
       },
@@ -298,6 +385,26 @@
           "unknown"
         ],
         "type": "string"
+      },
+      "GithubBranchCreated": {
+        "description": "The created branch (name + head sha).",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "repo": {
+            "type": "string"
+          },
+          "sha": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo",
+          "name",
+          "sha"
+        ],
+        "type": "object"
       },
       "GithubBranchPrompt": {
         "properties": {
@@ -1171,6 +1278,691 @@
         ],
         "type": "object"
       },
+      "HubBoard": {
+        "properties": {
+          "columns": {
+            "items": {
+              "$ref": "#/components/schemas/HubColumn"
+            },
+            "type": "array"
+          },
+          "context": {
+            "$ref": "#/components/schemas/HubBoardContext"
+          },
+          "orphans": {
+            "$ref": "#/components/schemas/HubOrphans"
+          }
+        },
+        "required": [
+          "columns",
+          "orphans",
+          "context"
+        ],
+        "type": "object"
+      },
+      "HubBoardContext": {
+        "properties": {
+          "generatedAt": {
+            "type": "string"
+          },
+          "jiraProjectKey": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "repos": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "repos",
+          "generatedAt"
+        ],
+        "type": "object"
+      },
+      "HubBrief": {
+        "properties": {
+          "generatedAt": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "summary",
+          "generatedAt"
+        ],
+        "type": "object"
+      },
+      "HubColumn": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "jiraStatuses": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "tickets": {
+            "items": {
+              "$ref": "#/components/schemas/HubTicketCard"
+            },
+            "type": "array"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "jiraStatuses",
+          "tickets"
+        ],
+        "type": "object"
+      },
+      "HubDeployment": {
+        "properties": {
+          "environment": {
+            "type": "string"
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "environment"
+        ],
+        "type": "object"
+      },
+      "HubFavoriteWorkflow": {
+        "properties": {
+          "lastRun": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/HubRunPill"
+              }
+            ]
+          },
+          "path": {
+            "type": "string"
+          },
+          "repo": {
+            "type": "string"
+          },
+          "workflowId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "workflowName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo",
+          "workflowId",
+          "workflowName",
+          "path"
+        ],
+        "type": "object"
+      },
+      "HubInbox": {
+        "properties": {
+          "brief": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/HubBrief"
+              }
+            ]
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/HubInboxItem"
+            },
+            "type": "array"
+          },
+          "rankedBy": {
+            "description": "`ai` | `heuristic`",
+            "type": "string"
+          }
+        },
+        "required": [
+          "items",
+          "rankedBy"
+        ],
+        "type": "object"
+      },
+      "HubInboxItem": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "description": "`qa` | `review` | `run` | `reminder`",
+            "type": "string"
+          },
+          "occurredAt": {
+            "type": "string"
+          },
+          "qa": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/HubInboxQa"
+              }
+            ]
+          },
+          "reminder": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/Reminder"
+              }
+            ]
+          },
+          "review": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/HubInboxReview"
+              }
+            ]
+          },
+          "run": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/HubInboxRun"
+              }
+            ]
+          },
+          "sourceLabel": {
+            "type": "string"
+          },
+          "ticketKey": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "urgency": {
+            "description": "Rank position (0 = most urgent).",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "sourceLabel",
+          "title",
+          "occurredAt",
+          "urgency"
+        ],
+        "type": "object"
+      },
+      "HubInboxQa": {
+        "properties": {
+          "channelId": {
+            "type": "string"
+          },
+          "permalink": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "threadTs": {
+            "type": "string"
+          },
+          "unread": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "channelId",
+          "threadTs",
+          "unread"
+        ],
+        "type": "object"
+      },
+      "HubInboxReview": {
+        "properties": {
+          "prNumber": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "repo": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo",
+          "prNumber",
+          "title",
+          "url"
+        ],
+        "type": "object"
+      },
+      "HubInboxRun": {
+        "properties": {
+          "conclusion": {
+            "type": "string"
+          },
+          "repo": {
+            "type": "string"
+          },
+          "runId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "url": {
+            "type": "string"
+          },
+          "workflowName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo",
+          "runId",
+          "workflowName",
+          "conclusion",
+          "url"
+        ],
+        "type": "object"
+      },
+      "HubLinkBody": {
+        "properties": {
+          "branch": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "prNumber": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "repo": {
+            "description": "`owner/name`",
+            "type": "string"
+          },
+          "ticketKey": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "ticketKey",
+          "repo"
+        ],
+        "type": "object"
+      },
+      "HubLinkSuggestion": {
+        "properties": {
+          "confidence": {
+            "format": "double",
+            "type": "number"
+          },
+          "source": {
+            "description": "`ai` | `heuristic`",
+            "type": "string"
+          },
+          "ticketKey": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "ticketKey",
+          "confidence",
+          "source"
+        ],
+        "type": "object"
+      },
+      "HubOrphanBranch": {
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "repo": {
+            "type": "string"
+          },
+          "suggestion": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/HubLinkSuggestion"
+              }
+            ]
+          }
+        },
+        "required": [
+          "repo",
+          "name"
+        ],
+        "type": "object"
+      },
+      "HubOrphanPr": {
+        "properties": {
+          "branch": {
+            "type": "string"
+          },
+          "number": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "repo": {
+            "type": "string"
+          },
+          "suggestion": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/HubLinkSuggestion"
+              }
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo",
+          "number",
+          "title",
+          "branch",
+          "url"
+        ],
+        "type": "object"
+      },
+      "HubOrphanTicket": {
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "summary",
+          "status"
+        ],
+        "type": "object"
+      },
+      "HubOrphans": {
+        "properties": {
+          "branches": {
+            "items": {
+              "$ref": "#/components/schemas/HubOrphanBranch"
+            },
+            "type": "array"
+          },
+          "prs": {
+            "items": {
+              "$ref": "#/components/schemas/HubOrphanPr"
+            },
+            "type": "array"
+          },
+          "tickets": {
+            "items": {
+              "$ref": "#/components/schemas/HubOrphanTicket"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "prs",
+          "branches",
+          "tickets"
+        ],
+        "type": "object"
+      },
+      "HubPrRef": {
+        "properties": {
+          "branch": {
+            "type": "string"
+          },
+          "checkState": {
+            "description": "`success` | `running` | `failed` | `none`",
+            "type": "string"
+          },
+          "number": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "repo": {
+            "description": "`owner/name`",
+            "type": "string"
+          },
+          "state": {
+            "description": "`open` | `draft` | `merged` | `closed`",
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo",
+          "number",
+          "title",
+          "state",
+          "checkState",
+          "branch",
+          "url"
+        ],
+        "type": "object"
+      },
+      "HubRunPill": {
+        "properties": {
+          "isFavorite": {
+            "type": "boolean"
+          },
+          "repo": {
+            "description": "`owner/name`",
+            "type": "string"
+          },
+          "runId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "startedAt": {
+            "type": "string"
+          },
+          "status": {
+            "description": "`success` | `running` | `failed`",
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "workflowId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "workflowName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo",
+          "workflowId",
+          "workflowName",
+          "runId",
+          "status",
+          "startedAt",
+          "url",
+          "isFavorite"
+        ],
+        "type": "object"
+      },
+      "HubRuns": {
+        "properties": {
+          "runs": {
+            "items": {
+              "$ref": "#/components/schemas/HubRunPill"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "runs"
+        ],
+        "type": "object"
+      },
+      "HubTicketCard": {
+        "properties": {
+          "assignee": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/JiraUser"
+              }
+            ]
+          },
+          "branch": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "bugCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "checkState": {
+            "description": "`success` | `running` | `failed` | `none` (aggregate over linked PRs)",
+            "type": "string"
+          },
+          "deployment": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/HubDeployment"
+              }
+            ]
+          },
+          "favoriteWorkflow": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/HubFavoriteWorkflow"
+              }
+            ]
+          },
+          "key": {
+            "type": "string"
+          },
+          "notesCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "prs": {
+            "items": {
+              "$ref": "#/components/schemas/HubPrRef"
+            },
+            "type": "array"
+          },
+          "ready": {
+            "type": "boolean"
+          },
+          "remindersDue": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "slackUnread": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "summary",
+          "status",
+          "updatedAt",
+          "bugCount",
+          "ready",
+          "prs",
+          "checkState",
+          "slackUnread",
+          "notesCount",
+          "remindersDue"
+        ],
+        "type": "object"
+      },
       "JiraAccountSummary": {
         "properties": {
           "accountId": {
@@ -1240,6 +2032,43 @@
           "id",
           "name",
           "type"
+        ],
+        "type": "object"
+      },
+      "JiraBoardColumn": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "jiraStatuses": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "jiraStatuses"
+        ],
+        "type": "object"
+      },
+      "JiraBoardMapping": {
+        "description": "Hub board columns ↔ Jira statuses mapping (Settings card). Stored as jsonb\non the connection row; a sensible default is served until the user edits it.",
+        "properties": {
+          "columns": {
+            "items": {
+              "$ref": "#/components/schemas/JiraBoardColumn"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "columns"
         ],
         "type": "object"
       },
@@ -1903,6 +2732,56 @@
         ],
         "type": "object"
       },
+      "NoteBacklink": {
+        "properties": {
+          "snippet": {
+            "type": "string"
+          },
+          "ticketKey": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "ticketKey",
+          "snippet"
+        ],
+        "type": "object"
+      },
+      "NoteDetail": {
+        "properties": {
+          "backlinks": {
+            "items": {
+              "$ref": "#/components/schemas/NoteBacklink"
+            },
+            "type": "array"
+          },
+          "body": {
+            "type": "string"
+          },
+          "reminders": {
+            "items": {
+              "$ref": "#/components/schemas/Reminder"
+            },
+            "type": "array"
+          },
+          "ticketKey": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "ticketKey",
+          "body",
+          "backlinks",
+          "reminders"
+        ],
+        "type": "object"
+      },
       "OkResponse": {
         "properties": {
           "ok": {
@@ -1942,6 +2821,21 @@
         ],
         "type": "object"
       },
+      "PutNoteBody": {
+        "properties": {
+          "body": {
+            "type": "string"
+          },
+          "ticketKey": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "ticketKey",
+          "body"
+        ],
+        "type": "object"
+      },
       "QueueErrorKind": {
         "description": "Whether a failing dashboard queue should degrade quietly (Agile/sprint\nfeatures absent on a non-Software site) or surface as a real error.",
         "enum": [
@@ -1949,6 +2843,71 @@
           "error"
         ],
         "type": "string"
+      },
+      "Reminder": {
+        "properties": {
+          "createdAt": {
+            "type": "string"
+          },
+          "dueAt": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "snoozedUntil": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "description": "`pending` | `done`",
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "ticketKey": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ticketKey",
+          "text",
+          "dueAt",
+          "state",
+          "createdAt"
+        ],
+        "type": "object"
+      },
+      "ReminderRefBody": {
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "ReminderSnoozeBody": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "until": {
+            "description": "ISO 8601 instant.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "until"
+        ],
+        "type": "object"
       },
       "RepoSelection": {
         "description": "`GET /me/github/repos` response.",
@@ -1986,6 +2945,23 @@
         ],
         "type": "object"
       },
+      "RerunBody": {
+        "properties": {
+          "repo": {
+            "description": "`owner/name`",
+            "type": "string"
+          },
+          "runId": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "repo",
+          "runId"
+        ],
+        "type": "object"
+      },
       "SearchBody": {
         "properties": {
           "cursor": {
@@ -2019,6 +2995,253 @@
         "required": [
           "repoFullName",
           "workflowIds"
+        ],
+        "type": "object"
+      },
+      "SlackAuthor": {
+        "properties": {
+          "avatarUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "displayName"
+        ],
+        "type": "object"
+      },
+      "SlackChannelOption": {
+        "description": "One entry of `GET /me/slack/channels` — a channel the bot can see.",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "isMember": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "topic": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "isMember"
+        ],
+        "type": "object"
+      },
+      "SlackChannelRef": {
+        "description": "One watched channel (also the JSON shape stored in\n`slack_connections.watched_channels`).",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "type": "object"
+      },
+      "SlackChannelsBody": {
+        "properties": {
+          "channelIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "channelIds"
+        ],
+        "type": "object"
+      },
+      "SlackConnectionSummary": {
+        "description": "`GET /me/slack` — connection state + watched channels.",
+        "properties": {
+          "botUserId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "connected": {
+            "type": "boolean"
+          },
+          "lastValidatedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "teamName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "validationStatus": {
+            "description": "`valid` | `expiring` | `invalid` | `unchecked`",
+            "type": "string"
+          },
+          "watchedChannels": {
+            "items": {
+              "$ref": "#/components/schemas/SlackChannelRef"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "connected",
+          "validationStatus",
+          "watchedChannels"
+        ],
+        "type": "object"
+      },
+      "SlackMarkReadBody": {
+        "properties": {
+          "ticketKey": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "ticketKey"
+        ],
+        "type": "object"
+      },
+      "SlackMessage": {
+        "properties": {
+          "author": {
+            "$ref": "#/components/schemas/SlackAuthor"
+          },
+          "isBot": {
+            "type": "boolean"
+          },
+          "postedAt": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "ts": {
+            "type": "string"
+          },
+          "unread": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ts",
+          "author",
+          "text",
+          "postedAt",
+          "unread",
+          "isBot"
+        ],
+        "type": "object"
+      },
+      "SlackReplyBody": {
+        "properties": {
+          "channelId": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "threadTs": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "channelId",
+          "threadTs",
+          "text"
+        ],
+        "type": "object"
+      },
+      "SlackThread": {
+        "properties": {
+          "channelId": {
+            "type": "string"
+          },
+          "channelName": {
+            "type": "string"
+          },
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/SlackMessage"
+            },
+            "type": "array"
+          },
+          "permalink": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "threadTs": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "channelId",
+          "channelName",
+          "threadTs",
+          "messages"
+        ],
+        "type": "object"
+      },
+      "SlackThreadsResult": {
+        "description": "`GET /me/slack/threads?ticketKey=` — QA threads matched to one ticket.",
+        "properties": {
+          "threads": {
+            "items": {
+              "$ref": "#/components/schemas/SlackThread"
+            },
+            "type": "array"
+          },
+          "ticketKey": {
+            "type": "string"
+          },
+          "unreadCount": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ticketKey",
+          "unreadCount",
+          "threads"
+        ],
+        "type": "object"
+      },
+      "SlackTokenBody": {
+        "properties": {
+          "token": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
         ],
         "type": "object"
       },
@@ -2176,6 +3399,138 @@
         ]
       }
     },
+    "/api/me/ai/draft-reply": {
+      "post": {
+        "operationId": "aiDraftReply",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiDraftReplyBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiDraft"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "POST /me/ai/draft-reply — suggested reply for a ticket's QA thread.",
+        "tags": [
+          "ai"
+        ]
+      }
+    },
+    "/api/me/ai/handoff": {
+      "post": {
+        "operationId": "aiHandoff",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiHandoffBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiDraft"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "POST /me/ai/handoff — QA handoff draft for a ticket moving to Testing.",
+        "tags": [
+          "ai"
+        ]
+      }
+    },
+    "/api/me/ai/settings": {
+      "get": {
+        "operationId": "aiSettings",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiSettings"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "GET /me/ai/settings — the AI-assist toggles (all off by default).",
+        "tags": [
+          "ai"
+        ]
+      },
+      "put": {
+        "operationId": "aiSetSettings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiSettings"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiSettings"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "PUT /me/ai/settings — replace the toggles.",
+        "tags": [
+          "ai"
+        ]
+      }
+    },
     "/api/me/events": {
       "get": {
         "operationId": "listEvents",
@@ -2311,6 +3666,42 @@
           }
         ],
         "summary": "GET /me/github — connection summary.",
+        "tags": [
+          "github"
+        ]
+      }
+    },
+    "/api/me/github/branch": {
+      "post": {
+        "operationId": "githubCreateBranch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateBranchBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GithubBranchCreated"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "POST /me/github/branch — create a branch (default base: default branch).",
         "tags": [
           "github"
         ]
@@ -2986,6 +4377,42 @@
         ]
       }
     },
+    "/api/me/github/workflow/rerun": {
+      "post": {
+        "operationId": "githubWorkflowRerun",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RerunBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "POST /me/github/workflow/rerun — re-run a workflow run.",
+        "tags": [
+          "github"
+        ]
+      }
+    },
     "/api/me/github/workflow/runs": {
       "get": {
         "operationId": "githubWorkflowRuns",
@@ -3078,6 +4505,183 @@
         ]
       }
     },
+    "/api/me/hub/board": {
+      "get": {
+        "operationId": "hubBoard",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HubBoard"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "GET /me/hub/board — the composed kanban board + orphan tray.",
+        "tags": [
+          "hub"
+        ]
+      }
+    },
+    "/api/me/hub/inbox": {
+      "get": {
+        "operationId": "hubInbox",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HubInbox"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "GET /me/hub/inbox — the ranked Needs-you feed (+ morning brief when on).",
+        "tags": [
+          "hub"
+        ]
+      }
+    },
+    "/api/me/hub/links": {
+      "delete": {
+        "operationId": "hubUnlink",
+        "parameters": [
+          {
+            "description": "Unused; accepted for symmetry",
+            "in": "query",
+            "name": "ticketKey",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "owner/name",
+            "in": "query",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "PR target",
+            "in": "query",
+            "name": "prNumber",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Branch target",
+            "in": "query",
+            "name": "branch",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "DELETE /me/hub/links — remove a manual link.",
+        "tags": [
+          "hub"
+        ]
+      },
+      "post": {
+        "operationId": "hubLink",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HubLinkBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "POST /me/hub/links — manually link a PR or branch to a ticket.",
+        "tags": [
+          "hub"
+        ]
+      }
+    },
+    "/api/me/hub/runs": {
+      "get": {
+        "operationId": "hubRuns",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HubRuns"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "GET /me/hub/runs — actions-strip run pills (favorites first-class).",
+        "tags": [
+          "hub"
+        ]
+      }
+    },
     "/api/me/jira": {
       "delete": {
         "operationId": "jiraDisconnect",
@@ -3123,6 +4727,66 @@
           }
         ],
         "summary": "GET /me/jira — connection summary.",
+        "tags": [
+          "jira"
+        ]
+      }
+    },
+    "/api/me/jira/board-mapping": {
+      "get": {
+        "operationId": "jiraBoardMapping",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JiraBoardMapping"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "GET /me/jira/board-mapping — the hub board's column ↔ status mapping.",
+        "tags": [
+          "jira"
+        ]
+      },
+      "put": {
+        "operationId": "jiraSetBoardMapping",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JiraBoardMapping"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JiraBoardMapping"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "PUT /me/jira/board-mapping — replace the mapping.",
         "tags": [
           "jira"
         ]
@@ -3895,6 +5559,484 @@
           "jira"
         ]
       }
+    },
+    "/api/me/notes": {
+      "get": {
+        "operationId": "getNote",
+        "parameters": [
+          {
+            "description": "Jira ticket key",
+            "in": "query",
+            "name": "ticketKey",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoteDetail"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "GET /me/notes?ticketKey= — the ticket's note (empty body when none).",
+        "tags": [
+          "notes"
+        ]
+      },
+      "put": {
+        "operationId": "putNote",
+        "parameters": [
+          {
+            "description": "IANA timezone for ⏰ parsing",
+            "in": "query",
+            "name": "tz",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutNoteBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoteDetail"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "PUT /me/notes?tz= — upsert the note and re-sync derived reminders/links.",
+        "tags": [
+          "notes"
+        ]
+      }
+    },
+    "/api/me/reminders": {
+      "get": {
+        "operationId": "listReminders",
+        "parameters": [
+          {
+            "description": "pending | done",
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Reminder"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "GET /me/reminders?state= — the user's reminders, due-date ascending.",
+        "tags": [
+          "notes"
+        ]
+      }
+    },
+    "/api/me/reminders/done": {
+      "post": {
+        "operationId": "reminderDone",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReminderRefBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Reminder"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "POST /me/reminders/done — mark a reminder done.",
+        "tags": [
+          "notes"
+        ]
+      }
+    },
+    "/api/me/reminders/snooze": {
+      "post": {
+        "operationId": "reminderSnooze",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReminderSnoozeBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Reminder"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "POST /me/reminders/snooze — suppress a reminder until the given instant.",
+        "tags": [
+          "notes"
+        ]
+      }
+    },
+    "/api/me/slack": {
+      "delete": {
+        "operationId": "slackDisconnect",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "DELETE /me/slack — remove the connection (and its synced messages stay).",
+        "tags": [
+          "slack"
+        ]
+      },
+      "get": {
+        "operationId": "slackStatus",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SlackConnectionSummary"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "GET /me/slack — connection status + watched channels.",
+        "tags": [
+          "slack"
+        ]
+      }
+    },
+    "/api/me/slack/channels": {
+      "get": {
+        "operationId": "slackChannels",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SlackChannelOption"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "GET /me/slack/channels — channels visible to the bot (for the picker).",
+        "tags": [
+          "slack"
+        ]
+      },
+      "put": {
+        "operationId": "slackSetChannels",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SlackChannelsBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SlackConnectionSummary"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "PUT /me/slack/channels — set the watched channels.",
+        "tags": [
+          "slack"
+        ]
+      }
+    },
+    "/api/me/slack/read": {
+      "post": {
+        "operationId": "slackMarkRead",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SlackMarkReadBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "POST /me/slack/read — mark a ticket's messages read.",
+        "tags": [
+          "slack"
+        ]
+      }
+    },
+    "/api/me/slack/reply": {
+      "post": {
+        "operationId": "slackReply",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SlackReplyBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SlackMessage"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "POST /me/slack/reply — post a reply into a thread.",
+        "tags": [
+          "slack"
+        ]
+      }
+    },
+    "/api/me/slack/threads": {
+      "get": {
+        "operationId": "slackThreads",
+        "parameters": [
+          {
+            "description": "Jira ticket key",
+            "in": "query",
+            "name": "ticketKey",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SlackThreadsResult"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "GET /me/slack/threads?ticketKey= — QA threads matched to a ticket.",
+        "tags": [
+          "slack"
+        ]
+      }
+    },
+    "/api/me/slack/token": {
+      "post": {
+        "operationId": "slackConnect",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SlackTokenBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SlackConnectionSummary"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "POST /me/slack/token — store + validate a bot token.",
+        "tags": [
+          "slack"
+        ]
+      }
+    },
+    "/api/me/slack/token/validate": {
+      "post": {
+        "operationId": "slackValidate",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SlackConnectionSummary"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "POST /me/slack/token/validate — re-validate the stored token.",
+        "tags": [
+          "slack"
+        ]
+      }
     }
   },
   "servers": [
@@ -3923,6 +6065,22 @@
     {
       "description": "Jira integration",
       "name": "jira"
+    },
+    {
+      "description": "Slack integration (QA channels)",
+      "name": "slack"
+    },
+    {
+      "description": "Per-ticket notes and reminders",
+      "name": "notes"
+    },
+    {
+      "description": "Workflow Hub board, inbox, runs",
+      "name": "hub"
+    },
+    {
+      "description": "AI assists (drafts, brief)",
+      "name": "ai"
     }
   ]
 }

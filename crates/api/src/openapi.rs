@@ -301,8 +301,8 @@ mod tests {
     fn spec_is_complete() {
         let doc = ApiDoc::openapi();
 
-        // 42 unique path keys (49 operations; some paths carry multiple methods).
-        assert_eq!(doc.paths.paths.len(), 42, "unexpected path count");
+        // 63 unique path keys (some paths carry multiple methods).
+        assert_eq!(doc.paths.paths.len(), 63, "unexpected path count");
 
         // Bearer security scheme is registered.
         let components = doc.components.as_ref().expect("components");
@@ -312,6 +312,10 @@ mod tests {
         assert!(doc.paths.paths.contains_key("/api/me"));
         assert!(doc.paths.paths.contains_key("/api/me/github/dashboard"));
         assert!(doc.paths.paths.contains_key("/api/me/jira/issue"));
+        assert!(doc.paths.paths.contains_key("/api/me/slack/threads"));
+        assert!(doc.paths.paths.contains_key("/api/me/notes"));
+        assert!(doc.paths.paths.contains_key("/api/me/hub/board"));
+        assert!(doc.paths.paths.contains_key("/api/me/ai/draft-reply"));
 
         // Serializes to JSON.
         let json = serde_json::to_string(&doc).expect("serialize");

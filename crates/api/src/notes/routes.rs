@@ -214,7 +214,7 @@ pub(crate) async fn reminder_snooze(
 ) -> Result<HttpResponse, AppError> {
     let until = chrono::DateTime::parse_from_rfc3339(&body.until)
         .map_err(|_| AppError::validation("`until` must be an ISO 8601 instant."))?;
-    let row = reminders::snooze(&state.db, user_id(&user)?, &body.id, until.into())
+    let row = reminders::snooze(&state.db, user_id(&user)?, &body.id, until)
         .await?
         .ok_or_else(|| AppError::not_found("Unknown reminder id."))?;
     Ok(HttpResponse::Ok().json(reminder_of(row)))
