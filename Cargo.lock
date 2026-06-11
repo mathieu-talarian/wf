@@ -4701,6 +4701,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "dotenvy",
+ "regex",
  "sea-orm",
  "serde",
  "serde_json",
@@ -4713,6 +4714,7 @@ dependencies = [
  "wf-db",
  "wf-github",
  "wf-jira",
+ "wf-slack",
  "wiremock",
 ]
 

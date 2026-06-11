@@ -8,7 +8,10 @@ use sea_orm::prelude::Uuid;
 use sea_orm::DbErr;
 use serde::Serialize;
 use wf_core::{Sealed, TokenCipher};
-use wf_db::tables::{events, github_pat_connections as gh, jira_pat_connections as jira, sync_state};
+use wf_db::tables::{
+    events, github_pat_connections as gh, jira_pat_connections as jira,
+    slack_connections as slack_conn, sync_state,
+};
 use wf_db::Db;
 use wf_github::{GithubClient, PolledPullRequest, PolledWorkflowRun};
 use wf_jira::{JiraClient, JiraCreds};
@@ -119,7 +122,33 @@ async fn reconcile_all(db: &Db) -> Result<(), DbErr> {
         let desired = jira_scopes(&conn);
         sync_state::replace_scopes(db, conn.user_id, "jira", &desired).await?;
     }
+    for conn in slack_conn::list_valid(db).await? {
+        let desired = slack_scopes(&conn);
+        sync_state::replace_scopes(db, conn.user_id, "slack", &desired).await?;
+    }
     Ok(())
+}
+
+/// One scope per watched channel; the channel id is the scope key.
+fn slack_scopes(conn: &slack_conn::Model) -> Vec<sync_state::ScopeKey> {
+    watched_channels(conn)
+        .into_iter()
+        .map(|(id, _)| sync_state::ScopeKey { scope_key: id, entity_kind: "channel".to_string() })
+        .collect()
+}
+
+/// `watched_channels` jsonb (`[{id, name}]`) → `(id, name)` pairs.
+fn watched_channels(conn: &slack_conn::Model) -> Vec<(String, String)> {
+    let Some(json) = conn.watched_channels.as_ref() else { return vec![] };
+    serde_json::from_value::<Vec<serde_json::Value>>(json.clone())
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|v| {
+            let id = v.get("id")?.as_str()?.to_string();
+            let name = v.get("name")?.as_str()?.to_string();
+            Some((id, name))
+        })
+        .collect()
 }
 
 fn github_scopes(conn: &gh::Model) -> Vec<sync_state::ScopeKey> {
@@ -162,8 +191,45 @@ async fn process_scope(
     match scope.source.as_str() {
         "github" => process_github(db, cipher, scope, opts).await,
         "jira" => process_jira(db, cipher, scope).await,
+        "slack" => process_slack(db, cipher, scope).await,
         other => Err(ScopeError::Poll(format!("unknown source {other:?}"))),
     }
+}
+
+async fn process_slack(
+    db: &Db,
+    cipher: &TokenCipher,
+    scope: &sync_state::Model,
+) -> Result<ScopeOutcome, ScopeError> {
+    let Some(conn) = slack_conn::select_row(db, scope.user_id).await? else {
+        sync_state::replace_scopes(db, scope.user_id, "slack", &[]).await?;
+        return Ok(ScopeOutcome { written: 0, new_cursor: None });
+    };
+    let token = open_sealed(
+        cipher,
+        &conn.bot_token_ciphertext,
+        &conn.bot_token_iv,
+        &conn.bot_token_auth_tag,
+    )
+    .map_err(ScopeError::Poll)?;
+    let channel_name = watched_channels(&conn)
+        .into_iter()
+        .find(|(id, _)| id == &scope.scope_key)
+        .map(|(_, name)| name)
+        .unwrap_or_else(|| scope.scope_key.clone());
+    let client = wf_slack::SlackClient::new(&token);
+    let outcome = crate::slack::poll_channel(
+        db,
+        &client,
+        scope.user_id,
+        &scope.scope_key,
+        &channel_name,
+        conn.bot_user_id.as_deref(),
+        scope.cursor.as_deref(),
+    )
+    .await
+    .map_err(ScopeError::Poll)?;
+    Ok(ScopeOutcome { written: outcome.written, new_cursor: outcome.new_cursor })
 }
 
 async fn process_github(

@@ -23,6 +23,8 @@ pub struct UpsertSlackMessageInput {
     pub is_bot: bool,
     pub body: String,
     pub ticket_key: Option<String>,
+    /// Baseline backfills insert as read (no inbox flood); live polls as unread.
+    pub is_read: bool,
     pub posted_at: DateTimeWithTimeZone,
 }
 
@@ -52,7 +54,7 @@ pub async fn upsert_many(
         is_bot: Set(input.is_bot),
         body: Set(input.body),
         ticket_key: Set(input.ticket_key),
-        is_read: Set(false),
+        is_read: Set(input.is_read),
         posted_at: Set(input.posted_at),
         ingested_at: Set(now),
     });

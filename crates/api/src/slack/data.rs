@@ -104,6 +104,7 @@ pub async fn reply(
         is_bot: true,
         body: text.to_string(),
         ticket_key,
+        is_read: true,
         posted_at,
     };
     messages::upsert_many(&state.db, user_id, vec![input]).await?;
