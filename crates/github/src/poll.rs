@@ -21,6 +21,8 @@ pub struct GithubActor {
 #[derive(Debug, Clone, Deserialize)]
 pub struct PolledWorkflowRun {
     pub id: i64,
+    #[serde(default)]
+    pub workflow_id: Option<i64>,
     #[serde(default = "default_attempt")]
     pub run_attempt: i64,
     pub name: Option<String>,
@@ -69,6 +71,28 @@ pub struct PolledPullRequest {
     pub closed_at: Option<DateTime<Utc>>,
     pub merged_at: Option<DateTime<Utc>>,
     pub user: Option<GithubActor>,
+    #[serde(default)]
+    pub head: Option<PolledPullHead>,
+}
+
+/// `head` projection of the REST PR listing (branch name only).
+#[derive(Debug, Clone, Deserialize)]
+pub struct PolledPullHead {
+    #[serde(rename = "ref")]
+    pub ref_name: String,
+}
+
+/// Newest workflow runs for `owner/repo` regardless of status (running
+/// included) — feeds the hub actions strip.
+pub async fn list_runs_any_status(
+    client: &GithubClient,
+    owner: &str,
+    repo: &str,
+) -> Result<Vec<PolledWorkflowRun>, GithubError> {
+    let path = format!("/repos/{owner}/{repo}/actions/runs");
+    let req = client.request(Method::GET, &path).query(&[("per_page", "30")]);
+    let body: RunsResponse = send_json(req).await?;
+    Ok(body.workflow_runs)
 }
 
 /// Newest page of PRs (all states) for `owner/repo`, sorted by update time.

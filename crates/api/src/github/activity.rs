@@ -17,7 +17,7 @@ use crate::error::AppError;
 use crate::github::token_cache::CachedPat;
 use crate::state::AppState;
 
-async fn require_pat(state: &AppState, user_id: Uuid) -> Result<CachedPat, AppError> {
+pub(crate) async fn require_pat(state: &AppState, user_id: Uuid) -> Result<CachedPat, AppError> {
     super::pat::resolve_pat(state, user_id)
         .await?
         .ok_or_else(|| AppError::from(GithubError::Api("No GitHub token connected".into())))

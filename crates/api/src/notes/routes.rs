@@ -28,7 +28,7 @@ pub(crate) struct NoteBacklink {
     snippet: String,
 }
 
-#[derive(Serialize, utoipa::ToSchema)]
+#[derive(Serialize, Clone, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Reminder {
     id: String,

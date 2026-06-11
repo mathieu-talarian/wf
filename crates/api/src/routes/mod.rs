@@ -14,5 +14,6 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
     crate::jira::routes::configure(cfg);
     crate::slack::routes::configure(cfg);
     crate::notes::routes::configure(cfg);
+    crate::hub::routes::configure(cfg);
     crate::openapi::configure(cfg);
 }

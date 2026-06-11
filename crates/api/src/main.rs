@@ -6,6 +6,7 @@ mod auth;
 mod dto;
 mod error;
 mod github;
+mod hub;
 mod jira;
 mod middleware;
 mod notes;
