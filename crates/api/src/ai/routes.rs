@@ -1,6 +1,6 @@
 //! AI routes (`ai` tag): settings + the two draft endpoints. Guards per the
 //! contract: 409 `ai-disabled` when the toggle is off, 503 `ai-unconfigured`
-//! when `ANTHROPIC_API_KEY` is absent.
+//! when `OPENAI_API_KEY` is absent.
 
 use actix_web::{web, HttpResponse};
 use sea_orm::prelude::Uuid;
@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use wf_db::tables::slack_messages;
 
 use crate::ai::settings::{self, AiSettings};
-use crate::ai::anthropic;
+use crate::ai::openai;
 use crate::auth::AuthUser;
 use crate::error::AppError;
 use crate::state::AppState;
@@ -107,7 +107,7 @@ pub(crate) async fn draft_reply(
         is missing, say what you'll check. Output ONLY the reply text — no \
         preamble, no quotes.";
     let prompt = format!("## Ticket context\n{context}\n\n## Thread\n{transcript}");
-    let text = anthropic::complete(&state, system, &prompt).await?;
+    let text = openai::complete(&state, system, &prompt).await?;
     Ok(HttpResponse::Ok().json(draft(text)))
 }
 
@@ -156,7 +156,7 @@ pub(crate) async fn handoff(
         "## Ticket {} — {}\n{}\n\n## Code state\n{}",
         issue.summary.key, issue.summary.summary, issue.description, code
     );
-    let text = anthropic::complete(&state, system, &prompt).await?;
+    let text = openai::complete(&state, system, &prompt).await?;
     Ok(HttpResponse::Ok().json(draft(text)))
 }
 

@@ -222,7 +222,7 @@ impl ErrorKind {
                 503,
                 "ai-unconfigured",
                 "AI not configured",
-                "ANTHROPIC_API_KEY is not set on the server.".to_string(),
+                "OPENAI_API_KEY is not set on the server.".to_string(),
             ),
             ErrorKind::AiApi(detail) => {
                 simple(502, "ai-request-failed", "AI request failed", detail.clone())

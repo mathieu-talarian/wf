@@ -1,6 +1,6 @@
-//! AI assists (`ai` tag): per-user toggles, the Anthropic Messages client, and
+//! AI assists (`ai` tag): per-user toggles, the OpenAI Chat Completions client, and
 //! the draft endpoints. The morning brief plugs into `hub::inbox`.
 
-pub mod anthropic;
+pub mod openai;
 pub mod routes;
 pub mod settings;

@@ -162,7 +162,7 @@ async fn morning_brief(
     if let Some(cached) = crate::hub::cache::get_brief(user_id) {
         return Some(cached);
     }
-    crate::ai::anthropic::require_key(state).ok()?;
+    crate::ai::openai::require_key(state).ok()?;
 
     let digest: String = items
         .iter()
@@ -178,7 +178,7 @@ async fn morning_brief(
     } else {
         format!("Current items, most urgent first:\n{digest}")
     };
-    let summary = crate::ai::anthropic::complete(state, system, &prompt).await.ok()?;
+    let summary = crate::ai::openai::complete(state, system, &prompt).await.ok()?;
     let brief = crate::hub::types::HubBrief {
         summary,
         generated_at: chrono::Utc::now().to_rfc3339(),

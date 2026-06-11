@@ -23,6 +23,7 @@ wf-slack = { path = "crates/slack" }
 wf-sync = { path = "crates/sync" }
 regex = "1"
 chrono-tz = "0.10"
+async-openai = { version = "0.41", features = ["chat-completion"] }
 
 # HTTP server
 actix-web = "4"

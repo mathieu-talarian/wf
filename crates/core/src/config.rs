@@ -64,9 +64,9 @@ pub struct Config {
     pub tick_lease_secs: u64,
     /// Interval of the in-process tick scheduler (`TICK_SCHEDULER_SECS`).
     pub tick_scheduler_secs: u64,
-    /// Anthropic API key for the AI assists (`ANTHROPIC_API_KEY`); AI
-    /// endpoints return 503 when unset.
-    pub anthropic_api_key: Option<String>,
+    /// OpenAI API key for the AI assists (`OPENAI_API_KEY`); AI endpoints
+    /// return 503 when unset.
+    pub openai_api_key: Option<String>,
 }
 
 const DEFAULT_PORT: u16 = 3000;
@@ -111,7 +111,7 @@ impl Config {
             tick_budget_ms: parse_u64(map, "TICK_BUDGET_MS", 30_000)?,
             tick_lease_secs: parse_u64(map, "TICK_LEASE_SECS", 90)?,
             tick_scheduler_secs: parse_u64(map, "TICK_SCHEDULER_SECS", 120)?,
-            anthropic_api_key: present(map, "ANTHROPIC_API_KEY"),
+            openai_api_key: present(map, "OPENAI_API_KEY"),
         })
     }
 
