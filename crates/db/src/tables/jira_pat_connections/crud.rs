@@ -66,6 +66,7 @@ fn upsert_model(input: UpsertJiraInput, now: DateTimeWithTimeZone) -> jira::Acti
         updated_at: Set(now),
         // Preserved across re-connect.
         selected_projects: NotSet,
+        board_mapping: NotSet,
         last_used_at: NotSet,
     }
 }
@@ -103,6 +104,22 @@ pub async fn mark_validation(
         .col_expr(jira::Column::ValidationStatus, Expr::value(status))
         .col_expr(jira::Column::ValidationError, Expr::value(error))
         .col_expr(jira::Column::LastValidatedAt, Expr::value(now))
+        .filter(jira::Column::UserId.eq(user_id))
+        .exec(db)
+        .await?;
+    Ok(())
+}
+
+/// Sets `board_mapping` (the hub board's columns ↔ Jira statuses config).
+pub async fn set_board_mapping(
+    db: &DatabaseConnection,
+    user_id: Uuid,
+    mapping: serde_json::Value,
+) -> Result<(), DbErr> {
+    let now: DateTimeWithTimeZone = chrono::Utc::now().into();
+    jira::Entity::update_many()
+        .col_expr(jira::Column::BoardMapping, Expr::value(mapping))
+        .col_expr(jira::Column::UpdatedAt, Expr::value(now))
         .filter(jira::Column::UserId.eq(user_id))
         .exec(db)
         .await?;

@@ -5,9 +5,9 @@
 //! `id` and `created_at`. Returns the resulting row (the `/me` response).
 
 use sea_orm::prelude::{DateTimeWithTimeZone, Uuid};
-use sea_orm::sea_query::OnConflict;
-use sea_orm::ActiveValue::Set;
-use sea_orm::{DatabaseConnection, DbErr, EntityTrait};
+use sea_orm::sea_query::{Expr, OnConflict};
+use sea_orm::ActiveValue::{NotSet, Set};
+use sea_orm::{ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter};
 use wf_core::AuthedUser;
 
 use super::entity as users;
@@ -45,7 +45,33 @@ fn active_model(id: Uuid, authed: &AuthedUser) -> users::ActiveModel {
         email: Set(authed.email.clone()),
         name: Set(authed.name.clone()),
         avatar_url: Set(authed.avatar_url.clone()),
+        ai_settings: NotSet,
         created_at: Set(now),
         updated_at: Set(now),
     }
+}
+
+/// Reads `ai_settings` (null until the user first saves the AI toggles).
+pub async fn get_ai_settings(
+    db: &DatabaseConnection,
+    user_id: Uuid,
+) -> Result<Option<serde_json::Value>, DbErr> {
+    let row = users::Entity::find_by_id(user_id).one(db).await?;
+    Ok(row.and_then(|r| r.ai_settings))
+}
+
+/// Persists the AI-assist toggles as-is (the API layer owns the shape).
+pub async fn set_ai_settings(
+    db: &DatabaseConnection,
+    user_id: Uuid,
+    settings: serde_json::Value,
+) -> Result<(), DbErr> {
+    let now: DateTimeWithTimeZone = chrono::Utc::now().into();
+    users::Entity::update_many()
+        .col_expr(users::Column::AiSettings, Expr::value(settings))
+        .col_expr(users::Column::UpdatedAt, Expr::value(now))
+        .filter(users::Column::Id.eq(user_id))
+        .exec(db)
+        .await
+        .map(|_| ())
 }

@@ -18,6 +18,7 @@ pub struct Model {
     pub api_token_iv: String,
     pub api_token_auth_tag: String,
     pub selected_projects: Option<Json>,
+    pub board_mapping: Option<Json>,
     pub last_four: Option<String>,
     pub last_validated_at: Option<DateTimeWithTimeZone>,
     pub last_used_at: Option<DateTimeWithTimeZone>,

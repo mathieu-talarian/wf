@@ -12,6 +12,7 @@ pub struct Model {
     pub email: String,
     pub name: Option<String>,
     pub avatar_url: Option<String>,
+    pub ai_settings: Option<Json>,
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
 }

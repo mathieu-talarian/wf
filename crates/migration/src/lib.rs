@@ -5,6 +5,7 @@ pub use sea_orm_migration::prelude::*;
 
 mod m0001_create_events;
 mod m0002_create_sync_state;
+mod m0003_create_hub_tables;
 
 pub struct Migrator;
 
@@ -14,6 +15,7 @@ impl MigratorTrait for Migrator {
         vec![
             Box::new(m0001_create_events::Migration),
             Box::new(m0002_create_sync_state::Migration),
+            Box::new(m0003_create_hub_tables::Migration),
         ]
     }
 }

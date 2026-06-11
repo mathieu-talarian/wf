@@ -9,5 +9,11 @@
 pub mod events;
 pub mod github_pat_connections;
 pub mod jira_pat_connections;
+pub mod note_links;
+pub mod notes;
+pub mod reminders;
+pub mod slack_connections;
+pub mod slack_messages;
 pub mod sync_state;
+pub mod ticket_links;
 pub mod users;
