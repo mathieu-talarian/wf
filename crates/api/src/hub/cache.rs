@@ -61,6 +61,22 @@ pub fn invalidate_board(user: Uuid) {
     }
 }
 
+fn brief_store() -> &'static Store<crate::hub::types::HubBrief> {
+    static S: OnceLock<Store<crate::hub::types::HubBrief>> = OnceLock::new();
+    S.get_or_init(Default::default)
+}
+
+/// The morning brief regenerates at most every 6h per user.
+const BRIEF_TTL: Duration = Duration::from_secs(6 * 3600);
+
+pub fn get_brief(user: Uuid) -> Option<crate::hub::types::HubBrief> {
+    get(brief_store(), user, BRIEF_TTL)
+}
+
+pub fn put_brief(user: Uuid, brief: &crate::hub::types::HubBrief) {
+    put(brief_store(), user, brief);
+}
+
 pub fn get_runs(user: Uuid) -> Option<HubRuns> {
     get(runs_store(), user, RUNS_TTL)
 }

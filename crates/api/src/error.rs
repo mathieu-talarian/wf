@@ -44,6 +44,12 @@ enum ErrorKind {
     Slack(wf_slack::SlackApiError),
     #[error("slack not connected")]
     SlackNotConnected,
+    #[error("ai assist disabled")]
+    AiDisabled,
+    #[error("ai not configured")]
+    AiUnconfigured,
+    #[error("ai request failed: {0}")]
+    AiApi(String),
     #[error("internal error: {0}")]
     Internal(anyhow::Error),
 }
@@ -206,6 +212,21 @@ impl ErrorKind {
             ErrorKind::JiraApi(_) => jira_api_parts(),
             ErrorKind::Slack(e) => slack_parts(e),
             ErrorKind::SlackNotConnected => slack_not_connected_parts(),
+            ErrorKind::AiDisabled => simple(
+                409,
+                "ai-disabled",
+                "AI assist disabled",
+                "Enable the corresponding AI toggle in Settings first.".to_string(),
+            ),
+            ErrorKind::AiUnconfigured => simple(
+                503,
+                "ai-unconfigured",
+                "AI not configured",
+                "ANTHROPIC_API_KEY is not set on the server.".to_string(),
+            ),
+            ErrorKind::AiApi(detail) => {
+                simple(502, "ai-request-failed", "AI request failed", detail.clone())
+            }
         }
     }
 }
@@ -234,6 +255,15 @@ impl AppError {
     }
     pub fn slack_not_connected() -> Self {
         Self::of(ErrorKind::SlackNotConnected)
+    }
+    pub fn ai_disabled() -> Self {
+        Self::of(ErrorKind::AiDisabled)
+    }
+    pub fn ai_unconfigured() -> Self {
+        Self::of(ErrorKind::AiUnconfigured)
+    }
+    pub fn ai_api(detail: String) -> Self {
+        Self::of(ErrorKind::AiApi(detail))
     }
 
     fn of(kind: ErrorKind) -> Self {

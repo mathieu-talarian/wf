@@ -2,6 +2,7 @@
 //! (migration plan §16). Phase 2 adds the Supabase JWKS verifier, the token
 //! cipher, the DB connection, and `GET /me`.
 
+mod ai;
 mod auth;
 mod dto;
 mod error;

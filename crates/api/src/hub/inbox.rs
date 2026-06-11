@@ -144,7 +144,47 @@ pub async fn inbox(state: &AppState, user_id: Uuid) -> Result<HubInbox, AppError
         })
         .collect();
 
-    Ok(HubInbox { items: ranked, brief: None, ranked_by: "heuristic".to_string() })
+    let brief = morning_brief(state, user_id, &ranked).await;
+    Ok(HubInbox { items: ranked, brief, ranked_by: "heuristic".to_string() })
+}
+
+/// AI morning brief: only when the user's toggle is on AND a key is
+/// configured; cached 6h; failures degrade to no brief (never an error).
+async fn morning_brief(
+    state: &AppState,
+    user_id: Uuid,
+    items: &[HubInboxItem],
+) -> Option<crate::hub::types::HubBrief> {
+    let settings = crate::ai::settings::get(state, user_id).await.ok()?;
+    if !settings.morning_brief {
+        return None;
+    }
+    if let Some(cached) = crate::hub::cache::get_brief(user_id) {
+        return Some(cached);
+    }
+    crate::ai::anthropic::require_key(state).ok()?;
+
+    let digest: String = items
+        .iter()
+        .take(20)
+        .map(|i| format!("- [{}] {} ({})", i.kind, i.title, i.source_label))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let system = "You write a 2-3 sentence 'morning brief' for a developer's \
+        dashboard, summarizing what most needs their attention right now \
+        (QA blockers and failed deploys first). Plain text, no lists, no greeting.";
+    let prompt = if digest.is_empty() {
+        "Nothing is pending. Say so in one short sentence.".to_string()
+    } else {
+        format!("Current items, most urgent first:\n{digest}")
+    };
+    let summary = crate::ai::anthropic::complete(state, system, &prompt).await.ok()?;
+    let brief = crate::hub::types::HubBrief {
+        summary,
+        generated_at: chrono::Utc::now().to_rfc3339(),
+    };
+    crate::hub::cache::put_brief(user_id, &brief);
+    Some(brief)
 }
 
 fn truncate(text: &str, max: usize) -> String {

@@ -60,7 +60,8 @@ Errors are returned as RFC 9457 `application/problem+json` carrying a stable \
         (name = "jira", description = "Jira integration"),
         (name = "slack", description = "Slack integration (QA channels)"),
         (name = "notes", description = "Per-ticket notes and reminders"),
-        (name = "hub", description = "Workflow Hub board, inbox, runs")
+        (name = "hub", description = "Workflow Hub board, inbox, runs"),
+        (name = "ai", description = "AI assists (drafts, brief)")
     ),
     paths(
         crate::routes::health::health,
@@ -140,6 +141,11 @@ Errors are returned as RFC 9457 `application/problem+json` carrying a stable \
         crate::hub::routes::unlink_route,
         crate::hub::routes::inbox_route,
         crate::hub::routes::runs_route,
+        // AI
+        crate::ai::routes::get_settings,
+        crate::ai::routes::set_settings,
+        crate::ai::routes::draft_reply,
+        crate::ai::routes::handoff,
     ),
     components(schemas(
         // wf-api response + body DTOs
@@ -196,6 +202,10 @@ Errors are returned as RFC 9457 `application/problem+json` carrying a stable \
         crate::hub::types::HubInboxReview,
         crate::hub::types::HubRuns,
         crate::hub::types::HubRunPill,
+        crate::ai::settings::AiSettings,
+        crate::ai::routes::AiDraft,
+        crate::ai::routes::AiDraftReplyBody,
+        crate::ai::routes::AiHandoffBody,
         crate::github::routes::TokenBody,
         crate::github::routes::ReposBody,
         crate::github::routes::PullsBody,
