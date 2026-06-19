@@ -116,12 +116,41 @@ pub async fn list_pulls_page(
 async fn send_json<T: serde::de::DeserializeOwned>(
     req: reqwest::RequestBuilder,
 ) -> Result<T, GithubError> {
-    let resp = req.send().await.map_err(|e| GithubError::Api(e.to_string()))?;
+    let resp = send_get_retry(req).await.map_err(|e| GithubError::Api(e.to_string()))?;
     let status = resp.status();
     if !status.is_success() {
         return Err(GithubError::Api(format!("poll HTTP {}", status.as_u16())));
     }
     resp.json().await.map_err(|e| GithubError::Api(e.to_string()))
+}
+
+/// Transient statuses worth one retry (rate-limit / upstream blip).
+fn is_transient(status: u16) -> bool {
+    matches!(status, 429 | 500 | 502 | 503 | 504)
+}
+
+/// Retry delay: honor `Retry-After` seconds (capped), else a short fixed pause.
+fn retry_delay(resp: Option<&reqwest::Response>) -> std::time::Duration {
+    resp.and_then(|r| r.headers().get(reqwest::header::RETRY_AFTER))
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.trim().parse::<u64>().ok())
+        .map(|s| std::time::Duration::from_secs(s).min(std::time::Duration::from_secs(15)))
+        .unwrap_or(std::time::Duration::from_millis(500))
+}
+
+/// One retry for a poller GET (all idempotent) on transport errors or transient
+/// statuses. ponytail: 1 retry, 15s cap — past that the scope backoff takes over.
+async fn send_get_retry(req: reqwest::RequestBuilder) -> reqwest::Result<reqwest::Response> {
+    let retry = req.try_clone();
+    let resp = req.send().await;
+    let needs_retry = resp.as_ref().map(|r| is_transient(r.status().as_u16())).unwrap_or(true);
+    match retry {
+        Some(c) if needs_retry => {
+            tokio::time::sleep(retry_delay(resp.as_ref().ok())).await;
+            c.send().await
+        }
+        _ => resp,
+    }
 }
 
 #[cfg(test)]

@@ -2,6 +2,9 @@
 //! failures as HTTP 200 + `{ok: false, error}`, so every call unwraps that
 //! envelope; `base` is a test seam (wiremock) like the GitHub client's.
 
+use std::time::Duration;
+
+use reqwest::{RequestBuilder, Response};
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde_json::json;
@@ -12,6 +15,37 @@ use crate::types::{
 };
 
 const DEFAULT_BASE: &str = "https://slack.com/api";
+const HTTP_TIMEOUT: Duration = Duration::from_secs(15);
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Transient statuses worth one retry (rate-limit / upstream blip).
+fn is_transient(status: u16) -> bool {
+    matches!(status, 429 | 500 | 502 | 503 | 504)
+}
+
+/// Retry delay: honor `Retry-After` seconds (capped at 15s), else a short pause.
+fn retry_delay(resp: Option<&Response>) -> Duration {
+    resp.and_then(|r| r.headers().get(reqwest::header::RETRY_AFTER))
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.trim().parse::<u64>().ok())
+        .map(|s| Duration::from_secs(s).min(Duration::from_secs(15)))
+        .unwrap_or(Duration::from_millis(500))
+}
+
+/// One retry for idempotent GETs on transport errors or transient statuses;
+/// honors `Retry-After`. ponytail: 1 retry, 15s cap — then the scope backoff wins.
+async fn send_once_retry(req: RequestBuilder, retryable: bool) -> reqwest::Result<Response> {
+    let retry = if retryable { req.try_clone() } else { None };
+    let resp = req.send().await;
+    let needs_retry = resp.as_ref().map(|r| is_transient(r.status().as_u16())).unwrap_or(true);
+    match retry {
+        Some(c) if needs_retry => {
+            tokio::time::sleep(retry_delay(resp.as_ref().ok())).await;
+            c.send().await
+        }
+        _ => resp,
+    }
+}
 
 pub struct SlackClient {
     http: reqwest::Client,
@@ -42,7 +76,11 @@ impl SlackClient {
     }
 
     pub fn with_base(token: &str, base: &str) -> Self {
-        let http = reqwest::Client::builder().build().expect("reqwest client builds");
+        let http = reqwest::Client::builder()
+            .timeout(HTTP_TIMEOUT)
+            .connect_timeout(CONNECT_TIMEOUT)
+            .build()
+            .expect("reqwest client builds");
         Self { http, token: token.to_string(), base: base.trim_end_matches('/').to_string() }
     }
 
@@ -60,7 +98,9 @@ impl SlackClient {
             None => self.http.get(&url).query(query),
         };
         req = req.bearer_auth(&self.token);
-        let resp = req.send().await.map_err(|_| SlackApiError::transport())?;
+        let resp = send_once_retry(req, body.is_none())
+            .await
+            .map_err(|_| SlackApiError::transport())?;
         let status = resp.status().as_u16();
         if status >= 400 {
             return Err(SlackApiError::http(status));

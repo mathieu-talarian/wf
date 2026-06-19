@@ -55,7 +55,11 @@ impl JwksVerifier {
             jwks_url: format!("{base}/auth/v1/.well-known/jwks.json"),
             issuer: format!("{base}/auth/v1"),
             audience: audience.to_string(),
-            http: reqwest::Client::new(),
+            http: reqwest::Client::builder()
+                .timeout(Duration::from_secs(10))
+                .connect_timeout(Duration::from_secs(5))
+                .build()
+                .expect("reqwest client builds"),
             cache: RwLock::new(None),
         }
     }

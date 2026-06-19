@@ -3,12 +3,46 @@
 //! credentials are never replayed to a redirect target (defense-in-depth
 //! alongside site-URL normalization). Every non-2xx becomes a `JiraApiError`.
 
+use std::time::Duration;
+
 use base64::Engine;
 use reqwest::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE};
-use reqwest::{Method, Response};
+use reqwest::{Method, RequestBuilder, Response};
 use serde::de::DeserializeOwned;
 
 use crate::errors::JiraApiError;
+
+const HTTP_TIMEOUT: Duration = Duration::from_secs(15);
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Transient statuses worth one retry (rate-limit / upstream blip).
+fn is_transient(status: u16) -> bool {
+    matches!(status, 429 | 500 | 502 | 503 | 504)
+}
+
+/// Retry delay: honor `Retry-After` seconds (capped at 15s), else a short pause.
+fn retry_delay(resp: Option<&Response>) -> Duration {
+    resp.and_then(|r| r.headers().get(reqwest::header::RETRY_AFTER))
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.trim().parse::<u64>().ok())
+        .map(|s| Duration::from_secs(s).min(Duration::from_secs(15)))
+        .unwrap_or(Duration::from_millis(500))
+}
+
+/// One retry for idempotent GETs on transport errors or transient statuses;
+/// honors `Retry-After`. ponytail: 1 retry, 15s cap — then the scope backoff wins.
+async fn send_once_retry(req: RequestBuilder, retryable: bool) -> reqwest::Result<Response> {
+    let retry = if retryable { req.try_clone() } else { None };
+    let resp = req.send().await;
+    let needs_retry = resp.as_ref().map(|r| is_transient(r.status().as_u16())).unwrap_or(true);
+    match retry {
+        Some(c) if needs_retry => {
+            tokio::time::sleep(retry_delay(resp.as_ref().ok())).await;
+            c.send().await
+        }
+        _ => resp,
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct JiraCreds {
@@ -47,6 +81,8 @@ impl JiraClient {
     pub fn new(creds: &JiraCreds) -> Self {
         let http = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
+            .timeout(HTTP_TIMEOUT)
+            .connect_timeout(CONNECT_TIMEOUT)
             .build()
             .expect("reqwest client builds");
         Self { http, site_url: creds.site_url.clone(), auth_header: auth_header(creds) }
@@ -63,6 +99,7 @@ impl JiraClient {
         query: &[(&str, String)],
         body: Option<&serde_json::Value>,
     ) -> Result<T, JiraApiError> {
+        let retryable = method == Method::GET;
         let mut req = self
             .http
             .request(method, format!("{}{}", self.site_url, path))
@@ -75,7 +112,7 @@ impl JiraClient {
             req = req.header(CONTENT_TYPE, "application/json").json(b);
         }
 
-        let resp = req.send().await.map_err(|_| JiraApiError::transport())?;
+        let resp = send_once_retry(req, retryable).await.map_err(|_| JiraApiError::transport())?;
         let status = resp.status().as_u16();
         // `redirect: none` surfaces 3xx as a response — never replay creds.
         if (300..400).contains(&status) {
@@ -86,8 +123,7 @@ impl JiraClient {
         }
         let text = resp.text().await.map_err(|_| JiraApiError::transport())?;
         let json_text = if text.is_empty() { "null" } else { text.as_str() };
-        serde_json::from_str::<T>(json_text)
-            .map_err(|_| JiraApiError::new(status, "Invalid Jira response", vec![]))
+        serde_json::from_str::<T>(json_text).map_err(|_| JiraApiError::new(status, "Invalid Jira response", vec![]))
     }
 
     pub async fn get<T: DeserializeOwned>(
