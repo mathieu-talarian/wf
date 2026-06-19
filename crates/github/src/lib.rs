@@ -23,8 +23,9 @@ pub use poll::{list_pulls_page, list_runs_any_status, list_workflow_runs_page, G
 pub use dashboard::enrich::{enrich_pull_request, enrich_pull_requests};
 pub use dashboard::types::{
     GithubAccountSummary, GithubApprovalState, GithubCheckState, GithubDashboard,
-    GithubPullEnrichmentResult, GithubPullRef, GithubPullRequestEnrichment, GithubQueueKey,
-    GithubRepoOption, GithubRequestedReviewer, GithubRequiredCheck, GithubWorkflowRunSummary,
+    GithubPullEnrichmentResult, GithubPullRef, GithubPullRequestBasic, GithubPullRequestEnrichment,
+    GithubQueueKey, GithubRepoOption, GithubRequestedReviewer, GithubRequiredCheck,
+    GithubWorkflowRunSummary,
 };
 pub use dashboard::{fetch_dashboard, fetch_queue_pulls, list_repositories};
 pub use errors::{GithubError, PatValidationError};

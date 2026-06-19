@@ -113,9 +113,4 @@ impl JiraClient {
     ) -> Result<T, JiraApiError> {
         self.request(Method::PUT, path, &[], Some(body)).await
     }
-
-    pub async fn del(&self, path: &str) -> Result<(), JiraApiError> {
-        self.request::<serde_json::Value>(Method::DELETE, path, &[], None).await?;
-        Ok(())
-    }
 }

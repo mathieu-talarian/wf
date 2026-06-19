@@ -18,12 +18,13 @@ pub struct UpsertSlackConnectionInput {
     pub validation_status: String,
 }
 
-pub async fn upsert_connection(
-    db: &DatabaseConnection,
+/// Builds the row for an upsert. `watched_channels` is `NotSet` so an existing
+/// channel list survives a token re-validation (only the listed columns update).
+fn build_active_model(
     input: UpsertSlackConnectionInput,
-) -> Result<slack::Model, DbErr> {
-    let now: DateTimeWithTimeZone = chrono::Utc::now().into();
-    let model = slack::ActiveModel {
+    now: DateTimeWithTimeZone,
+) -> slack::ActiveModel {
+    slack::ActiveModel {
         user_id: Set(input.user_id),
         bot_token_ciphertext: Set(input.bot_token_ciphertext),
         bot_token_iv: Set(input.bot_token_iv),
@@ -36,7 +37,15 @@ pub async fn upsert_connection(
         validation_error: Set(None),
         created_at: Set(now),
         updated_at: Set(now),
-    };
+    }
+}
+
+pub async fn upsert_connection(
+    db: &DatabaseConnection,
+    input: UpsertSlackConnectionInput,
+) -> Result<slack::Model, DbErr> {
+    let now: DateTimeWithTimeZone = chrono::Utc::now().into();
+    let model = build_active_model(input, now);
     slack::Entity::insert(model)
         .on_conflict(
             OnConflict::column(slack::Column::UserId)

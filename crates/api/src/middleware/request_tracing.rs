@@ -126,6 +126,8 @@ where
         let metrics = self.metrics.clone();
         let service = self.service.clone();
 
+        log_request_start(&span, &method, &fallback_route);
+
         Box::pin(async move {
             let active_attrs = [KeyValue::new("http.request.method", method.clone())];
             metrics.active.add(1, &active_attrs);
@@ -138,6 +140,7 @@ where
 
             let (route, status_code) = summarize(&outcome, &fallback_route);
             apply_span_outcome(&outcome_span, &outcome, &route, status_code);
+            log_request_finish(&outcome_span, &method, &route, status_code, elapsed);
             record_duration(&metrics, elapsed, method, route, status_code);
 
             outcome
@@ -162,6 +165,28 @@ fn record_duration(
             KeyValue::new("http.response.status_code", i64::from(status_code)),
         ],
     );
+}
+
+/// Emit a "request received" access-log event the instant an endpoint is hit.
+/// `in_scope` runs it inside the request span so it carries the trace/span ids;
+/// it's `info` level so it shows in the dev pretty-stdout (and on the export
+/// path it reaches Cloud Logging). One line per ping, every endpoint.
+fn log_request_start(span: &Span, method: &str, path: &str) {
+    span.in_scope(|| tracing::info!(target: "http.access", "→ {method} {path}"));
+}
+
+/// Emit the matching "request completed" event with the resolved route
+/// template, status code, and wall-clock latency in milliseconds.
+fn log_request_finish(span: &Span, method: &str, route: &str, status: u16, elapsed: f64) {
+    let duration_ms = elapsed * 1000.0;
+    span.in_scope(|| {
+        tracing::info!(
+            target: "http.access",
+            status,
+            duration_ms,
+            "← {method} {route} {status} {duration_ms:.1}ms",
+        );
+    });
 }
 
 /// Build the server root span with stable OTel HTTP semantic-convention fields.

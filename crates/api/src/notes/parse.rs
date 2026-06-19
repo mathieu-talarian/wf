@@ -94,49 +94,69 @@ pub fn parse_reminders(
 
 const DEFAULT_TIME: (u32, u32) = (9, 0);
 
+/// Outcome of resolving the first `<when>` token: either a final answer or a
+/// `(date, time)` pair to combine with the default time.
+enum WhenStep {
+    Done(Option<DateTime<Utc>>),
+    Partial(Option<NaiveDate>, Option<NaiveTime>),
+}
+
 /// Parses the `<when>` expression. Returns `None` for unparseable input — the
 /// token then simply doesn't create a reminder (never an error).
 fn parse_when(expr: &str, tz: Tz, now: DateTime<Utc>) -> Option<DateTime<Utc>> {
     let tokens: Vec<&str> = expr.split_whitespace().collect();
-    let local_now = now.with_timezone(&tz);
-    let today = local_now.date_naive();
-
-    let (date, time, consumed_time) = match tokens.first() {
-        None => return None,
-        Some(&first) => {
-            let lower = first.to_lowercase();
-            if let Ok(date) = NaiveDate::parse_from_str(first, "%Y-%m-%d") {
-                (Some(date), tokens.get(1).and_then(|t| parse_time(t)), true)
-            } else if let Some(dt) = parse_iso_datetime(first) {
-                return local_to_utc(tz, dt.0, dt.1);
-            } else if lower == "today" {
-                (Some(today), tokens.get(1).and_then(|t| parse_time(t)), true)
-            } else if lower == "tomorrow" {
-                (Some(today + Duration::days(1)), tokens.get(1).and_then(|t| parse_time(t)), true)
-            } else if let Some(weekday) = parse_weekday(&lower) {
-                let mut date = today + Duration::days(1);
-                while date.weekday() != weekday {
-                    date += Duration::days(1);
-                }
-                (Some(date), tokens.get(1).and_then(|t| parse_time(t)), true)
-            } else if let Some(time) = parse_time(first) {
-                // Bare HH:MM: today, else tomorrow.
-                let candidate = local_to_utc(tz, today, time)?;
-                let due = if candidate <= now {
-                    local_to_utc(tz, today + Duration::days(1), time)?
-                } else {
-                    candidate
-                };
-                return Some(due);
-            } else {
-                return None;
-            }
-        }
+    let today = now.with_timezone(&tz).date_naive();
+    let (date, time) = match resolve_first(&tokens, tz, today, now) {
+        WhenStep::Done(result) => return result,
+        WhenStep::Partial(date, time) => (date, time),
     };
-    let _ = consumed_time;
     let time = time
         .unwrap_or_else(|| NaiveTime::from_hms_opt(DEFAULT_TIME.0, DEFAULT_TIME.1, 0).expect("valid"));
     local_to_utc(tz, date?, time)
+}
+
+/// Interprets the leading token (absolute date, `today`/`tomorrow`, a weekday,
+/// an ISO datetime, or a bare `HH:MM`), pulling an optional time off token 2.
+fn resolve_first(tokens: &[&str], tz: Tz, today: NaiveDate, now: DateTime<Utc>) -> WhenStep {
+    let Some(&first) = tokens.first() else {
+        return WhenStep::Done(None);
+    };
+    let next_time = tokens.get(1).and_then(|t| parse_time(t));
+    let lower = first.to_lowercase();
+    if let Ok(date) = NaiveDate::parse_from_str(first, "%Y-%m-%d") {
+        WhenStep::Partial(Some(date), next_time)
+    } else if let Some(dt) = parse_iso_datetime(first) {
+        WhenStep::Done(local_to_utc(tz, dt.0, dt.1))
+    } else if lower == "today" {
+        WhenStep::Partial(Some(today), next_time)
+    } else if lower == "tomorrow" {
+        WhenStep::Partial(Some(today + Duration::days(1)), next_time)
+    } else if let Some(weekday) = parse_weekday(&lower) {
+        WhenStep::Partial(Some(next_weekday(today, weekday)), next_time)
+    } else if let Some(time) = parse_time(first) {
+        WhenStep::Done(bare_time(tz, today, time, now))
+    } else {
+        WhenStep::Done(None)
+    }
+}
+
+/// First date strictly after `today` that falls on `weekday`.
+fn next_weekday(today: NaiveDate, weekday: chrono::Weekday) -> NaiveDate {
+    let mut date = today + Duration::days(1);
+    while date.weekday() != weekday {
+        date += Duration::days(1);
+    }
+    date
+}
+
+/// Bare `HH:MM`: today if still in the future, otherwise tomorrow.
+fn bare_time(tz: Tz, today: NaiveDate, time: NaiveTime, now: DateTime<Utc>) -> Option<DateTime<Utc>> {
+    let candidate = local_to_utc(tz, today, time)?;
+    if candidate <= now {
+        local_to_utc(tz, today + Duration::days(1), time)
+    } else {
+        Some(candidate)
+    }
 }
 
 fn parse_iso_datetime(token: &str) -> Option<(NaiveDate, NaiveTime)> {

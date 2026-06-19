@@ -602,3 +602,4 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .route("/me/github/favorites", web::get().to(favorites_route))
         .route("/me/github/favorites", web::put().to(set_favorites_route));
 }
+

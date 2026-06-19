@@ -38,32 +38,42 @@ pub async fn sync_for_ticket(
     }
     delete.exec(db).await?;
 
-    if !parsed.is_empty() {
-        let now: DateTimeWithTimeZone = chrono::Utc::now().into();
-        let models = parsed.into_iter().map(|p| rem::ActiveModel {
-            user_id: Set(user_id),
-            id: Set(p.id),
-            ticket_key: Set(ticket_key.to_string()),
-            body: Set(p.body),
-            due_at: Set(p.due_at),
-            state: Set("pending".to_string()),
-            snoozed_until: Set(None),
-            created_at: Set(now),
-        });
-        let insert = rem::Entity::insert_many(models).on_conflict(
-            OnConflict::columns([rem::Column::UserId, rem::Column::Id])
-                .do_nothing()
-                .to_owned(),
-        );
-        // Every parsed reminder may already exist; that's a no-op, not an error.
-        match insert.exec(db).await {
-            Err(DbErr::RecordNotInserted) => {}
-            other => {
-                other?;
-            }
-        }
-    }
+    insert_new_reminders(db, user_id, ticket_key, parsed).await?;
     for_ticket(db, user_id, ticket_key).await
+}
+
+/// Inserts the freshly parsed reminders as `pending`. Hashes that already exist
+/// are skipped via `ON CONFLICT DO NOTHING`, which surfaces as
+/// `RecordNotInserted` — a no-op here, not an error.
+async fn insert_new_reminders(
+    db: &DatabaseConnection,
+    user_id: Uuid,
+    ticket_key: &str,
+    parsed: Vec<ParsedReminderInput>,
+) -> Result<(), DbErr> {
+    if parsed.is_empty() {
+        return Ok(());
+    }
+    let now: DateTimeWithTimeZone = chrono::Utc::now().into();
+    let models = parsed.into_iter().map(|p| rem::ActiveModel {
+        user_id: Set(user_id),
+        id: Set(p.id),
+        ticket_key: Set(ticket_key.to_string()),
+        body: Set(p.body),
+        due_at: Set(p.due_at),
+        state: Set("pending".to_string()),
+        snoozed_until: Set(None),
+        created_at: Set(now),
+    });
+    let insert = rem::Entity::insert_many(models).on_conflict(
+        OnConflict::columns([rem::Column::UserId, rem::Column::Id])
+            .do_nothing()
+            .to_owned(),
+    );
+    match insert.exec(db).await {
+        Err(DbErr::RecordNotInserted) => Ok(()),
+        other => other.map(|_| ()),
+    }
 }
 
 pub async fn for_ticket(

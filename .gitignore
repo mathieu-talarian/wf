@@ -4,3 +4,5 @@
 !.env.example
 .idea/
 .serena/
+graphify-out
+.codex

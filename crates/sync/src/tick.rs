@@ -212,12 +212,19 @@ async fn process_slack(
         &conn.bot_token_auth_tag,
     )
     .map_err(ScopeError::Poll)?;
-    let channel_name = watched_channels(&conn)
-        .into_iter()
-        .find(|(id, _)| id == &scope.scope_key)
-        .map(|(_, name)| name)
-        .unwrap_or_else(|| scope.scope_key.clone());
-    let client = wf_slack::SlackClient::new(&token);
+    poll_slack(db, &token, &conn, scope).await
+}
+
+/// Resolves the channel display name from the connection's watched list, then
+/// polls that channel and maps the result into a [`ScopeOutcome`].
+async fn poll_slack(
+    db: &Db,
+    token: &str,
+    conn: &slack_conn::Model,
+    scope: &sync_state::Model,
+) -> Result<ScopeOutcome, ScopeError> {
+    let channel_name = slack_channel_name(conn, scope);
+    let client = wf_slack::SlackClient::new(token);
     let outcome = crate::slack::poll_channel(
         db,
         &client,
@@ -230,6 +237,15 @@ async fn process_slack(
     .await
     .map_err(ScopeError::Poll)?;
     Ok(ScopeOutcome { written: outcome.written, new_cursor: outcome.new_cursor })
+}
+
+/// Display name for the scope's channel id, falling back to the id itself.
+fn slack_channel_name(conn: &slack_conn::Model, scope: &sync_state::Model) -> String {
+    watched_channels(conn)
+        .into_iter()
+        .find(|(id, _)| id == &scope.scope_key)
+        .map(|(_, name)| name)
+        .unwrap_or_else(|| scope.scope_key.clone())
 }
 
 async fn process_github(

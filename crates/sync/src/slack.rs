@@ -47,11 +47,24 @@ pub async fn poll_channel(
     if page.is_empty() {
         return Ok(SlackPollOutcome { written: 0, new_cursor: cursor.map(str::to_string) });
     }
+    let raw = expand_threads(client, channel_id, &page).await?;
+    let inputs = build_inputs(client, channel_id, channel_name, &raw, bot_user_id, baseline).await;
 
-    // Expand threads: any root in the page with replies gets fully fetched so
-    // replies inherit the root's ticket match.
+    let new_cursor = page.iter().map(|m| m.ts.clone()).max();
+    let written = messages::upsert_many(db, user_id, inputs).await.map_err(|e| e.to_string())?;
+    Ok(SlackPollOutcome { written, new_cursor: new_cursor.or_else(|| cursor.map(str::to_string)) })
+}
+
+/// Expands every thread root in the page (a root with replies) into its full
+/// reply set so replies inherit the root's ticket match, then returns all
+/// messages sorted by `ts` and de-duplicated.
+async fn expand_threads(
+    client: &SlackClient,
+    channel_id: &str,
+    page: &[SlackRawMessage],
+) -> Result<Vec<SlackRawMessage>, String> {
     let mut raw: Vec<SlackRawMessage> = Vec::new();
-    for message in &page {
+    for message in page {
         if message.reply_count.unwrap_or(0) > 0 && message.thread_ts.as_deref().is_none_or(|t| t == message.ts) {
             let thread =
                 client.replies(channel_id, &message.ts).await.map_err(|e| e.to_string())?;
@@ -62,46 +75,82 @@ pub async fn poll_channel(
     }
     raw.sort_by(|a, b| a.ts.cmp(&b.ts));
     raw.dedup_by(|a, b| a.ts == b.ts);
+    Ok(raw)
+}
 
-    // Thread roots' ticket keys propagate to their replies.
+/// Maps each thread root `ts` to the ticket key in its text, so replies can
+/// inherit it when their own text carries no key.
+fn collect_root_keys(raw: &[SlackRawMessage]) -> HashMap<String, Option<String>> {
     let mut root_keys: HashMap<String, Option<String>> = HashMap::new();
-    for message in &raw {
+    for message in raw {
         let root = message.thread_ts.clone().unwrap_or_else(|| message.ts.clone());
         if root == message.ts {
             root_keys.insert(root, match_ticket_key(&message.text));
         }
     }
+    root_keys
+}
 
+/// Turns expanded messages into upsert rows (skipping any with an unparseable ts).
+async fn build_inputs(
+    client: &SlackClient,
+    channel_id: &str,
+    channel_name: &str,
+    raw: &[SlackRawMessage],
+    bot_user_id: Option<&str>,
+    baseline: bool,
+) -> Vec<UpsertSlackMessageInput> {
+    let root_keys = collect_root_keys(raw);
     let mut profiles: HashMap<String, (String, Option<String>)> = HashMap::new();
     let mut inputs = Vec::with_capacity(raw.len());
-    for message in &raw {
-        let thread_ts = message.thread_ts.clone().unwrap_or_else(|| message.ts.clone());
-        let ticket_key = match_ticket_key(&message.text)
-            .or_else(|| root_keys.get(&thread_ts).cloned().flatten());
-        let is_bot = message.bot_id.is_some()
-            || message.user.as_deref().is_some_and(|u| Some(u) == bot_user_id);
-        let (author_id, author_name, avatar) =
-            resolve_author(client, &mut profiles, message, is_bot).await;
-        let Some(posted_at) = ts_to_datetime(&message.ts) else { continue };
-        inputs.push(UpsertSlackMessageInput {
-            channel_id: channel_id.to_string(),
-            channel_name: channel_name.to_string(),
-            ts: message.ts.clone(),
-            thread_ts,
-            author_id,
-            author_name,
-            author_avatar_url: avatar,
-            is_bot,
-            body: message.text.clone(),
-            ticket_key,
-            is_read: baseline || is_bot,
-            posted_at,
-        });
+    for message in raw {
+        let ctx = MessageContext { channel_id, channel_name, bot_user_id, baseline };
+        if let Some(input) = message_to_input(client, &mut profiles, &root_keys, message, ctx).await {
+            inputs.push(input);
+        }
     }
+    inputs
+}
 
-    let new_cursor = page.iter().map(|m| m.ts.clone()).max();
-    let written = messages::upsert_many(db, user_id, inputs).await.map_err(|e| e.to_string())?;
-    Ok(SlackPollOutcome { written, new_cursor: new_cursor.or_else(|| cursor.map(str::to_string)) })
+/// Per-poll constants threaded into each message's row construction.
+struct MessageContext<'a> {
+    channel_id: &'a str,
+    channel_name: &'a str,
+    bot_user_id: Option<&'a str>,
+    baseline: bool,
+}
+
+/// Builds one upsert row, resolving the author (memoized in `profiles`) and the
+/// inherited thread ticket key. Returns `None` if the Slack ts won't parse.
+async fn message_to_input(
+    client: &SlackClient,
+    profiles: &mut HashMap<String, (String, Option<String>)>,
+    root_keys: &HashMap<String, Option<String>>,
+    message: &SlackRawMessage,
+    ctx: MessageContext<'_>,
+) -> Option<UpsertSlackMessageInput> {
+    let thread_ts = message.thread_ts.clone().unwrap_or_else(|| message.ts.clone());
+    let ticket_key = match_ticket_key(&message.text)
+        .or_else(|| root_keys.get(&thread_ts).cloned().flatten());
+    let is_bot = message.bot_id.is_some()
+        || message.user.as_deref().is_some_and(|u| Some(u) == ctx.bot_user_id);
+    let (author_id, author_name, avatar) =
+        resolve_author(client, profiles, message, is_bot).await;
+    let posted_at = ts_to_datetime(&message.ts)?;
+    Some(UpsertSlackMessageInput {
+        channel_id: ctx.channel_id.to_string(),
+        channel_name: ctx.channel_name.to_string(),
+        ts: message.ts.clone(),
+        thread_ts,
+        author_id,
+        author_name,
+        author_avatar_url: avatar,
+        is_bot,
+        body: message.text.clone(),
+        ticket_key,
+        is_read: ctx.baseline || is_bot,
+        posted_at,
+    })
 }
 
 /// `users.info`, memoized per poll; bots and lookup failures degrade to ids.

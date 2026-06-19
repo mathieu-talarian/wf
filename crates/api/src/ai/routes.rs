@@ -6,11 +6,13 @@ use actix_web::{web, HttpResponse};
 use sea_orm::prelude::Uuid;
 use serde::{Deserialize, Serialize};
 use wf_db::tables::slack_messages;
+use wf_jira::JiraIssueDetail;
 
-use crate::ai::settings::{self, AiSettings};
 use crate::ai::openai;
+use crate::ai::settings::{self, AiSettings};
 use crate::auth::AuthUser;
 use crate::error::AppError;
+use crate::hub::types::HubTicketCard;
 use crate::state::AppState;
 
 #[derive(Serialize, utoipa::ToSchema)]
@@ -92,15 +94,8 @@ pub(crate) async fn draft_reply(
     if thread.is_empty() {
         return Err(AppError::not_found("Unknown Slack thread for this ticket."));
     }
-    let transcript: String = thread
-        .iter()
-        .map(|m| format!("{}: {}", m.author_name, m.body))
-        .collect::<Vec<_>>()
-        .join("\n");
-    let context = issue
-        .map(|i| format!("Ticket {} — {}\n{}", i.summary.key, i.summary.summary, i.description))
-        .unwrap_or_else(|| format!("Ticket {}", body.ticket_key));
-
+    let transcript = thread_transcript(&thread);
+    let context = ticket_context(issue, &body.ticket_key);
     let system = "You draft Slack replies for a developer answering their QA team. \
         Reply as the developer, in their voice: concise, friendly, concrete. \
         Answer the latest question(s) using the ticket context. If information \
@@ -130,24 +125,7 @@ pub(crate) async fn handoff(
     let card = board.as_ref().and_then(|b| {
         b.columns.iter().flat_map(|c| &c.tickets).find(|t| t.key == body.ticket_key).cloned()
     });
-    let code = card
-        .map(|c| {
-            let prs = c
-                .prs
-                .iter()
-                .map(|p| format!("PR #{} ({}, {}) — {}", p.number, p.repo, p.state, p.title))
-                .collect::<Vec<_>>()
-                .join("\n");
-            format!(
-                "Branch: {}\n{}\nChecks: {}\nDeployed: {}",
-                c.branch.unwrap_or_else(|| "—".to_string()),
-                prs,
-                c.check_state,
-                c.deployment.map(|d| d.environment).unwrap_or_else(|| "unknown".to_string()),
-            )
-        })
-        .unwrap_or_else(|| "No linked code found.".to_string());
-
+    let code = code_state(card);
     let system = "You draft the Slack message a developer posts in the QA channel \
         when handing a ticket to testing. Include: what changed (from the ticket), \
         where to test it (environment/branch), and what to focus on. Use short \
@@ -158,6 +136,42 @@ pub(crate) async fn handoff(
     );
     let text = openai::complete(&state, system, &prompt).await?;
     Ok(HttpResponse::Ok().json(draft(text)))
+}
+
+/// Flattens a Slack thread into a `author: body` transcript, oldest first.
+fn thread_transcript(thread: &[slack_messages::Model]) -> String {
+    thread
+        .iter()
+        .map(|m| format!("{}: {}", m.author_name, m.body))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Ticket summary + description for the prompt, or a bare key if unavailable.
+fn ticket_context(issue: Option<JiraIssueDetail>, ticket_key: &str) -> String {
+    issue
+        .map(|i| format!("Ticket {} — {}\n{}", i.summary.key, i.summary.summary, i.description))
+        .unwrap_or_else(|| format!("Ticket {ticket_key}"))
+}
+
+/// Branch / PRs / checks / deployment summary for the matched card, if any.
+fn code_state(card: Option<HubTicketCard>) -> String {
+    let Some(c) = card else {
+        return "No linked code found.".to_string();
+    };
+    let prs = c
+        .prs
+        .iter()
+        .map(|p| format!("PR #{} ({}, {}) — {}", p.number, p.repo, p.state, p.title))
+        .collect::<Vec<_>>()
+        .join("\n");
+    format!(
+        "Branch: {}\n{}\nChecks: {}\nDeployed: {}",
+        c.branch.unwrap_or_else(|| "—".to_string()),
+        prs,
+        c.check_state,
+        c.deployment.map(|d| d.environment).unwrap_or_else(|| "unknown".to_string()),
+    )
 }
 
 pub fn configure(cfg: &mut web::ServiceConfig) {

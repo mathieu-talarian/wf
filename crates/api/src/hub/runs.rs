@@ -32,10 +32,22 @@ pub async fn runs(state: &AppState, user_id: Uuid) -> Result<HubRuns, AppError> 
     }
     let pat = require_pat(state, user_id).await?;
     let favorites: HashMap<String, Vec<i64>> = gh::get_favorites(&state.db, user_id).await?;
-    let client = GithubClient::new(&pat.token);
-
     let repos: Vec<String> = pat.selected_repos.iter().take(MAX_REPOS).cloned().collect();
-    let pages: Vec<(String, Vec<PolledWorkflowRun>)> = stream::iter(repos)
+    let pages = fetch_run_pages(&pat.token, &repos).await;
+
+    let mut pills = build_pills(pages, &favorites);
+    pills.sort_by(|a, b| b.started_at.cmp(&a.started_at));
+    pills.truncate(MAX_PILLS);
+
+    let result = HubRuns { runs: pills };
+    cache::put_runs(user_id, &result);
+    Ok(result)
+}
+
+/// Fetches recent runs (any status) per repo, bounded concurrency.
+async fn fetch_run_pages(token: &str, repos: &[String]) -> Vec<(String, Vec<PolledWorkflowRun>)> {
+    let client = GithubClient::new(token);
+    stream::iter(repos.to_vec())
         .map(|repo| {
             let client = &client;
             async move {
@@ -46,35 +58,39 @@ pub async fn runs(state: &AppState, user_id: Uuid) -> Result<HubRuns, AppError> 
         })
         .buffered(4)
         .collect()
-        .await;
+        .await
+}
 
+/// Flattens run pages into pills; when any favorites exist, keeps only those.
+fn build_pills(
+    pages: Vec<(String, Vec<PolledWorkflowRun>)>,
+    favorites: &HashMap<String, Vec<i64>>,
+) -> Vec<HubRunPill> {
     let any_favorites = favorites.values().any(|ids| !ids.is_empty());
     let mut pills: Vec<HubRunPill> = Vec::new();
     for (repo, runs) in pages {
         let favorite_ids = favorites.get(&repo).cloned().unwrap_or_default();
         for run in runs {
-            let workflow_id = run.workflow_id.unwrap_or_default();
-            let is_favorite = favorite_ids.contains(&workflow_id);
+            let is_favorite = favorite_ids.contains(&run.workflow_id.unwrap_or_default());
             if any_favorites && !is_favorite {
                 continue;
             }
-            pills.push(HubRunPill {
-                repo: repo.clone(),
-                workflow_id,
-                workflow_name: run.name.clone().unwrap_or_else(|| "workflow".to_string()),
-                run_id: run.id,
-                status: run_status(&run).to_string(),
-                version: None,
-                started_at: run.created_at.to_rfc3339(),
-                url: run.html_url.clone().unwrap_or_default(),
-                is_favorite,
-            });
+            pills.push(run_pill(&repo, &run, is_favorite));
         }
     }
-    pills.sort_by(|a, b| b.started_at.cmp(&a.started_at));
-    pills.truncate(MAX_PILLS);
+    pills
+}
 
-    let result = HubRuns { runs: pills };
-    cache::put_runs(user_id, &result);
-    Ok(result)
+fn run_pill(repo: &str, run: &PolledWorkflowRun, is_favorite: bool) -> HubRunPill {
+    HubRunPill {
+        repo: repo.to_string(),
+        workflow_id: run.workflow_id.unwrap_or_default(),
+        workflow_name: run.name.clone().unwrap_or_else(|| "workflow".to_string()),
+        run_id: run.id,
+        status: run_status(run).to_string(),
+        version: None,
+        started_at: run.created_at.to_rfc3339(),
+        url: run.html_url.clone().unwrap_or_default(),
+        is_favorite,
+    }
 }

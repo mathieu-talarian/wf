@@ -86,14 +86,9 @@ impl Config {
     /// schema: optional vars get defaults, required vars must be present and
     /// non-empty, `PORT` is a positive integer, `CORS_ORIGINS` is CSV.
     pub fn from_map(map: &HashMap<String, String>) -> Result<Self, ConfigError> {
-        let cors_origins = match present(map, "CORS_ORIGINS") {
-            None => vec![DEFAULT_CORS_ORIGIN.to_string()],
-            Some(raw) => parse_csv(&raw),
-        };
-
         Ok(Config {
             port: parse_port(map)?,
-            cors_origins,
+            cors_origins: parse_cors_origins(map),
             node_env: parse_node_env(map)?,
             log_level: parse_log_level(map)?,
             otel_service_name: present(map, "OTEL_SERVICE_NAME")
@@ -128,6 +123,14 @@ impl Config {
 }
 
 /// Parses `PORT`: defaults to [`DEFAULT_PORT`], else must be a positive integer.
+/// CORS allow-list: comma-separated `CORS_ORIGINS`, or the dev default when unset.
+fn parse_cors_origins(map: &HashMap<String, String>) -> Vec<String> {
+    match present(map, "CORS_ORIGINS") {
+        None => vec![DEFAULT_CORS_ORIGIN.to_string()],
+        Some(raw) => parse_csv(&raw),
+    }
+}
+
 fn parse_port(map: &HashMap<String, String>) -> Result<u16, ConfigError> {
     match present(map, "PORT") {
         None => Ok(DEFAULT_PORT),

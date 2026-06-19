@@ -31,17 +31,14 @@ pub struct UpsertSlackMessageInput {
 /// Inserts a batch of polled messages; re-polled rows update their mutable
 /// fields (edits, late ticket-key matches) but never reset `is_read`.
 /// Returns the number of rows written.
-pub async fn upsert_many(
-    db: &DatabaseConnection,
+/// Builds one row from a polled message. `id` is `NotSet` (DB-assigned); the
+/// caller's `on_conflict` decides which columns a re-poll overwrites.
+fn build_active_model(
     user_id: Uuid,
-    inputs: Vec<UpsertSlackMessageInput>,
-) -> Result<u64, DbErr> {
-    if inputs.is_empty() {
-        return Ok(0);
-    }
-    let count = inputs.len() as u64;
-    let now: DateTimeWithTimeZone = chrono::Utc::now().into();
-    let models = inputs.into_iter().map(|input| msg::ActiveModel {
+    input: UpsertSlackMessageInput,
+    now: DateTimeWithTimeZone,
+) -> msg::ActiveModel {
+    msg::ActiveModel {
         id: NotSet,
         user_id: Set(user_id),
         channel_id: Set(input.channel_id),
@@ -57,7 +54,22 @@ pub async fn upsert_many(
         is_read: Set(input.is_read),
         posted_at: Set(input.posted_at),
         ingested_at: Set(now),
-    });
+    }
+}
+
+pub async fn upsert_many(
+    db: &DatabaseConnection,
+    user_id: Uuid,
+    inputs: Vec<UpsertSlackMessageInput>,
+) -> Result<u64, DbErr> {
+    if inputs.is_empty() {
+        return Ok(0);
+    }
+    let count = inputs.len() as u64;
+    let now: DateTimeWithTimeZone = chrono::Utc::now().into();
+    let models = inputs
+        .into_iter()
+        .map(|input| build_active_model(user_id, input, now));
     msg::Entity::insert_many(models)
         .on_conflict(
             OnConflict::columns([msg::Column::UserId, msg::Column::ChannelId, msg::Column::Ts])

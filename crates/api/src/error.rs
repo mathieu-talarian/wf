@@ -197,6 +197,28 @@ fn jira_api_parts() -> Parts {
     )
 }
 
+/// Problem parts for the AI error variants (callers route all three here).
+fn ai_parts(kind: &ErrorKind) -> Parts {
+    match kind {
+        ErrorKind::AiDisabled => simple(
+            409,
+            "ai-disabled",
+            "AI assist disabled",
+            "Enable the corresponding AI toggle in Settings first.".to_string(),
+        ),
+        ErrorKind::AiUnconfigured => simple(
+            503,
+            "ai-unconfigured",
+            "AI not configured",
+            "OPENAI_API_KEY is not set on the server.".to_string(),
+        ),
+        ErrorKind::AiApi(detail) => {
+            simple(502, "ai-request-failed", "AI request failed", detail.clone())
+        }
+        _ => internal_parts(),
+    }
+}
+
 impl ErrorKind {
     fn parts(&self) -> Parts {
         match self {
@@ -212,20 +234,8 @@ impl ErrorKind {
             ErrorKind::JiraApi(_) => jira_api_parts(),
             ErrorKind::Slack(e) => slack_parts(e),
             ErrorKind::SlackNotConnected => slack_not_connected_parts(),
-            ErrorKind::AiDisabled => simple(
-                409,
-                "ai-disabled",
-                "AI assist disabled",
-                "Enable the corresponding AI toggle in Settings first.".to_string(),
-            ),
-            ErrorKind::AiUnconfigured => simple(
-                503,
-                "ai-unconfigured",
-                "AI not configured",
-                "OPENAI_API_KEY is not set on the server.".to_string(),
-            ),
-            ErrorKind::AiApi(detail) => {
-                simple(502, "ai-request-failed", "AI request failed", detail.clone())
+            ErrorKind::AiDisabled | ErrorKind::AiUnconfigured | ErrorKind::AiApi(_) => {
+                ai_parts(self)
             }
         }
     }
