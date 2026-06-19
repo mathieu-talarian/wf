@@ -1,4 +1,4 @@
-# Workflow backend — Rust rewrite
+# Workflow backend
 
 ## Tools must use
 - Serena
