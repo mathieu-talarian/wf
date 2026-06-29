@@ -1,11 +1,12 @@
 //! Slack routes (`slack` tag). All require a valid Supabase JWT.
 
-use actix_web::{web, HttpResponse};
+use actix_web::{HttpResponse, web};
 use sea_orm::prelude::Uuid;
 use serde::Deserialize;
 
 use crate::auth::AuthUser;
 use crate::error::AppError;
+use crate::hub::cache as hub_cache;
 use crate::slack::{data, pat};
 use crate::state::AppState;
 
@@ -69,7 +70,9 @@ pub(crate) async fn connect(
     user: AuthUser,
     body: web::Json<SlackTokenBody>,
 ) -> Result<HttpResponse, AppError> {
-    let summary = pat::connect(&state, user_id(&user)?, &body.token).await?;
+    let uid = user_id(&user)?;
+    let summary = pat::connect(&state, uid, &body.token).await?;
+    hub_cache::invalidate_user(uid);
     Ok(HttpResponse::Ok().json(summary))
 }
 
@@ -97,7 +100,9 @@ pub(crate) async fn disconnect(
     state: web::Data<AppState>,
     user: AuthUser,
 ) -> Result<HttpResponse, AppError> {
-    pat::disconnect(&state, user_id(&user)?).await?;
+    let uid = user_id(&user)?;
+    pat::disconnect(&state, uid).await?;
+    hub_cache::invalidate_user(uid);
     Ok(HttpResponse::Ok().json(serde_json::json!({ "ok": true })))
 }
 
@@ -126,7 +131,9 @@ pub(crate) async fn set_channels(
     user: AuthUser,
     body: web::Json<SlackChannelsBody>,
 ) -> Result<HttpResponse, AppError> {
-    let summary = pat::set_channels(&state, user_id(&user)?, &body.channel_ids).await?;
+    let uid = user_id(&user)?;
+    let summary = pat::set_channels(&state, uid, &body.channel_ids).await?;
+    hub_cache::invalidate_user(uid);
     Ok(HttpResponse::Ok().json(summary))
 }
 
@@ -157,9 +164,14 @@ pub(crate) async fn reply(
     user: AuthUser,
     body: web::Json<SlackReplyBody>,
 ) -> Result<HttpResponse, AppError> {
-    let message =
-        data::reply(&state, user_id(&user)?, &body.channel_id, &body.thread_ts, &body.text)
-            .await?;
+    let message = data::reply(
+        &state,
+        user_id(&user)?,
+        &body.channel_id,
+        &body.thread_ts,
+        &body.text,
+    )
+    .await?;
     Ok(HttpResponse::Ok().json(message))
 }
 
@@ -174,7 +186,10 @@ pub(crate) async fn mark_read(
     user: AuthUser,
     body: web::Json<SlackMarkReadBody>,
 ) -> Result<HttpResponse, AppError> {
-    data::mark_read(&state, user_id(&user)?, &body.ticket_key).await?;
+    let uid = user_id(&user)?;
+    data::mark_read(&state, uid, &body.ticket_key).await?;
+    hub_cache::invalidate_board(uid);
+    hub_cache::invalidate_inbox(uid);
     Ok(HttpResponse::Ok().json(serde_json::json!({ "ok": true })))
 }
 

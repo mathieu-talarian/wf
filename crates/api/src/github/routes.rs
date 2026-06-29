@@ -1,20 +1,19 @@
 //! GitHub connection routes (migration plan §14.2; port of
 //! `github/routes/pat.ts`). All require a valid Supabase JWT.
 
-use actix_web::{web, HttpResponse};
+use actix_web::{HttpResponse, web};
 use sea_orm::prelude::Uuid;
 use serde::Deserialize;
 use std::collections::HashMap;
 
-use wf_github::{
-    GithubCreatePullInput, GithubMergeMethod, GithubPullRef, GithubQueueKey, RepoRef,
-};
+use wf_github::{GithubCreatePullInput, GithubMergeMethod, GithubPullRef, GithubQueueKey, RepoRef};
 
 use crate::auth::AuthUser;
 use crate::error::AppError;
 use wf_db::tables::github_pat_connections as github_pat;
 
 use crate::github::{activity, dashboard, pat};
+use crate::hub::cache as hub_cache;
 use crate::state::AppState;
 
 #[derive(Deserialize, utoipa::ToSchema)]
@@ -72,7 +71,10 @@ pub(crate) struct WorkflowRunsQuery {
 }
 
 fn ref_of(owner: &str, repo: &str) -> RepoRef {
-    RepoRef { owner: owner.to_string(), repo: repo.to_string() }
+    RepoRef {
+        owner: owner.to_string(),
+        repo: repo.to_string(),
+    }
 }
 
 #[derive(Deserialize, utoipa::ToSchema)]
@@ -129,7 +131,10 @@ fn user_id(user: &AuthUser) -> Result<Uuid, AppError> {
     responses((status = 200, body = crate::github::summary::GithubConnectionSummary))
 )]
 /// GET /me/github — connection summary.
-pub(crate) async fn status(state: web::Data<AppState>, user: AuthUser) -> Result<HttpResponse, AppError> {
+pub(crate) async fn status(
+    state: web::Data<AppState>,
+    user: AuthUser,
+) -> Result<HttpResponse, AppError> {
     let summary = pat::status(&state, user_id(&user)?).await?;
     Ok(HttpResponse::Ok().json(summary))
 }
@@ -145,7 +150,9 @@ pub(crate) async fn connect(
     user: AuthUser,
     body: web::Json<TokenBody>,
 ) -> Result<HttpResponse, AppError> {
-    let summary = pat::connect(&state, user_id(&user)?, body.token.trim()).await?;
+    let uid = user_id(&user)?;
+    let summary = pat::connect(&state, uid, body.token.trim()).await?;
+    hub_cache::invalidate_user(uid);
     Ok(HttpResponse::Ok().json(summary))
 }
 
@@ -155,7 +162,10 @@ pub(crate) async fn connect(
     responses((status = 200, body = crate::github::summary::GithubConnectionSummary))
 )]
 /// POST /me/github/token/validate — re-validate the stored token.
-pub(crate) async fn validate(state: web::Data<AppState>, user: AuthUser) -> Result<HttpResponse, AppError> {
+pub(crate) async fn validate(
+    state: web::Data<AppState>,
+    user: AuthUser,
+) -> Result<HttpResponse, AppError> {
     let summary = pat::validate(&state, user_id(&user)?).await?;
     Ok(HttpResponse::Ok().json(summary))
 }
@@ -166,8 +176,13 @@ pub(crate) async fn validate(state: web::Data<AppState>, user: AuthUser) -> Resu
     responses((status = 200, body = crate::dto::DisconnectedResponse))
 )]
 /// DELETE /me/github — disconnect; clears caches.
-pub(crate) async fn disconnect(state: web::Data<AppState>, user: AuthUser) -> Result<HttpResponse, AppError> {
-    pat::disconnect(&state, user_id(&user)?).await?;
+pub(crate) async fn disconnect(
+    state: web::Data<AppState>,
+    user: AuthUser,
+) -> Result<HttpResponse, AppError> {
+    let uid = user_id(&user)?;
+    pat::disconnect(&state, uid).await?;
+    hub_cache::invalidate_user(uid);
     Ok(HttpResponse::Ok().json(serde_json::json!({ "disconnected": true })))
 }
 
@@ -228,7 +243,10 @@ pub(crate) async fn queue_route(
     responses((status = 200, body = crate::github::dashboard::RepoSelection))
 )]
 /// GET /me/github/repos — available repos + current selection.
-pub(crate) async fn repos_route(state: web::Data<AppState>, user: AuthUser) -> Result<HttpResponse, AppError> {
+pub(crate) async fn repos_route(
+    state: web::Data<AppState>,
+    user: AuthUser,
+) -> Result<HttpResponse, AppError> {
     let r = dashboard::list_repos(&state, user_id(&user)?).await?;
     Ok(HttpResponse::Ok().json(r))
 }
@@ -244,7 +262,9 @@ pub(crate) async fn set_repos_route(
     user: AuthUser,
     body: web::Json<ReposBody>,
 ) -> Result<HttpResponse, AppError> {
-    let s = dashboard::set_selected_repos(&state, user_id(&user)?, &body.repos).await?;
+    let uid = user_id(&user)?;
+    let s = dashboard::set_selected_repos(&state, uid, &body.repos).await?;
+    hub_cache::invalidate_user(uid);
     Ok(HttpResponse::Ok().json(s))
 }
 
@@ -268,7 +288,10 @@ pub(crate) async fn pull_route(
         .number
         .parse()
         .map_err(|_| AppError::validation(format!("invalid pull number: {}", q.number)))?;
-    let r = RepoRef { owner: q.owner.clone(), repo: q.repo.clone() };
+    let r = RepoRef {
+        owner: q.owner.clone(),
+        repo: q.repo.clone(),
+    };
     let e = dashboard::get_pull_enrichment(&state, user_id(&user)?, r, number).await?;
     Ok(HttpResponse::Ok().json(e))
 }
@@ -331,8 +354,8 @@ pub(crate) async fn workflow_inputs_route(
     user: AuthUser,
     q: web::Query<WorkflowInputsQuery>,
 ) -> Result<HttpResponse, AppError> {
-    let r =
-        activity::workflow_inputs(&state, user_id(&user)?, ref_of(&q.owner, &q.repo), &q.path).await?;
+    let r = activity::workflow_inputs(&state, user_id(&user)?, ref_of(&q.owner, &q.repo), &q.path)
+        .await?;
     Ok(HttpResponse::Ok().json(r))
 }
 
@@ -409,15 +432,18 @@ pub(crate) async fn dispatch_route(
     user: AuthUser,
     body: web::Json<DispatchBody>,
 ) -> Result<HttpResponse, AppError> {
+    let uid = user_id(&user)?;
     activity::dispatch(
         &state,
-        user_id(&user)?,
+        uid,
         ref_of(&body.owner, &body.repo),
         body.workflow_id,
         &body.git_ref,
         &body.inputs,
     )
     .await?;
+    hub_cache::invalidate_board(uid);
+    hub_cache::invalidate_runs(uid);
     Ok(HttpResponse::Ok().json(serde_json::json!({ "ok": true })))
 }
 
@@ -457,7 +483,10 @@ pub(crate) async fn rerun_route(
     user: AuthUser,
     body: web::Json<RerunBody>,
 ) -> Result<HttpResponse, AppError> {
-    activity::rerun(&state, user_id(&user)?, full_repo_ref(&body.repo)?, body.run_id).await?;
+    let uid = user_id(&user)?;
+    activity::rerun(&state, uid, full_repo_ref(&body.repo)?, body.run_id).await?;
+    hub_cache::invalidate_board(uid);
+    hub_cache::invalidate_runs(uid);
     Ok(HttpResponse::Ok().json(serde_json::json!({ "ok": true })))
 }
 
@@ -500,7 +529,13 @@ pub(crate) async fn create_pull_route(
         title: body.title.clone(),
         body: body.body.clone().unwrap_or_default(),
     };
-    let r = activity::create_pull(&state, user_id(&user)?, ref_of(&body.owner, &body.repo), &input).await?;
+    let r = activity::create_pull(
+        &state,
+        user_id(&user)?,
+        ref_of(&body.owner, &body.repo),
+        &input,
+    )
+    .await?;
     Ok(HttpResponse::Ok().json(r))
 }
 
@@ -537,7 +572,13 @@ pub(crate) async fn close_pull_route(
     user: AuthUser,
     body: web::Json<ClosePullBody>,
 ) -> Result<HttpResponse, AppError> {
-    activity::close_pull(&state, user_id(&user)?, ref_of(&body.owner, &body.repo), body.number).await?;
+    activity::close_pull(
+        &state,
+        user_id(&user)?,
+        ref_of(&body.owner, &body.repo),
+        body.number,
+    )
+    .await?;
     Ok(HttpResponse::Ok().json(serde_json::json!({ "ok": true })))
 }
 
@@ -566,40 +607,73 @@ pub(crate) async fn set_favorites_route(
     user: AuthUser,
     body: web::Json<SetFavoritesBody>,
 ) -> Result<HttpResponse, AppError> {
-    let r = github_pat::set_repo_favorites(
-        &state.db,
-        user_id(&user)?,
-        &body.repo_full_name,
-        &body.workflow_ids,
-    )
-    .await?;
+    let uid = user_id(&user)?;
+    let r =
+        github_pat::set_repo_favorites(&state.db, uid, &body.repo_full_name, &body.workflow_ids)
+            .await?;
+    hub_cache::invalidate_board(uid);
+    hub_cache::invalidate_runs(uid);
     Ok(HttpResponse::Ok().json(r))
 }
 
 pub fn configure(cfg: &mut web::ServiceConfig) {
+    configure_account_routes(cfg);
+    configure_dashboard_routes(cfg);
+    configure_activity_routes(cfg);
+    configure_workflow_routes(cfg);
+    configure_pull_routes(cfg);
+}
+
+fn configure_account_routes(cfg: &mut web::ServiceConfig) {
     cfg.route("/me/github", web::get().to(status))
         .route("/me/github/token", web::post().to(connect))
         .route("/me/github/token/validate", web::post().to(validate))
-        .route("/me/github", web::delete().to(disconnect))
-        .route("/me/github/dashboard", web::get().to(dashboard_route))
+        .route("/me/github", web::delete().to(disconnect));
+}
+
+fn configure_dashboard_routes(cfg: &mut web::ServiceConfig) {
+    cfg.route("/me/github/dashboard", web::get().to(dashboard_route))
         .route("/me/github/queue", web::get().to(queue_route))
         .route("/me/github/repos", web::get().to(repos_route))
         .route("/me/github/repos", web::put().to(set_repos_route))
-        .route("/me/github/pull", web::get().to(pull_route))
-        .route("/me/github/pulls/enrich", web::post().to(pulls_route))
-        .route("/me/github/branches", web::get().to(branches_route))
-        .route("/me/github/workflows", web::get().to(workflows_route))
-        .route("/me/github/workflow/inputs", web::get().to(workflow_inputs_route))
-        .route("/me/github/workflow/runs", web::get().to(workflow_runs_route))
-        .route("/me/github/repo/branches", web::get().to(repo_branches_route))
-        .route("/me/github/repo/environments", web::get().to(environments_route))
-        .route("/me/github/workflow/dispatch", web::post().to(dispatch_route))
-        .route("/me/github/workflow/rerun", web::post().to(rerun_route))
-        .route("/me/github/branch", web::post().to(create_branch_route))
-        .route("/me/github/pulls", web::post().to(create_pull_route))
-        .route("/me/github/pull/merge", web::post().to(merge_pull_route))
-        .route("/me/github/pull/close", web::post().to(close_pull_route))
         .route("/me/github/favorites", web::get().to(favorites_route))
         .route("/me/github/favorites", web::put().to(set_favorites_route));
 }
 
+fn configure_activity_routes(cfg: &mut web::ServiceConfig) {
+    cfg.route("/me/github/pull", web::get().to(pull_route))
+        .route("/me/github/pulls/enrich", web::post().to(pulls_route))
+        .route("/me/github/branches", web::get().to(branches_route))
+        .route("/me/github/workflows", web::get().to(workflows_route))
+        .route(
+            "/me/github/workflow/inputs",
+            web::get().to(workflow_inputs_route),
+        )
+        .route(
+            "/me/github/workflow/runs",
+            web::get().to(workflow_runs_route),
+        )
+        .route(
+            "/me/github/repo/branches",
+            web::get().to(repo_branches_route),
+        )
+        .route(
+            "/me/github/repo/environments",
+            web::get().to(environments_route),
+        );
+}
+
+fn configure_workflow_routes(cfg: &mut web::ServiceConfig) {
+    cfg.route(
+        "/me/github/workflow/dispatch",
+        web::post().to(dispatch_route),
+    )
+    .route("/me/github/workflow/rerun", web::post().to(rerun_route))
+    .route("/me/github/branch", web::post().to(create_branch_route));
+}
+
+fn configure_pull_routes(cfg: &mut web::ServiceConfig) {
+    cfg.route("/me/github/pulls", web::post().to(create_pull_route))
+        .route("/me/github/pull/merge", web::post().to(merge_pull_route))
+        .route("/me/github/pull/close", web::post().to(close_pull_route));
+}

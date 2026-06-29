@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use futures::stream::{self, StreamExt};
 use sea_orm::prelude::Uuid;
 use wf_db::tables::github_pat_connections as gh;
-use wf_github::{list_runs_any_status, GithubClient, PolledWorkflowRun};
+use wf_github::{GithubClient, PolledWorkflowRun, list_runs_any_status};
 
 use crate::error::AppError;
 use crate::github::activity::require_pat;
@@ -27,6 +27,11 @@ pub(crate) fn run_status(run: &PolledWorkflowRun) -> &'static str {
 }
 
 pub async fn runs(state: &AppState, user_id: Uuid) -> Result<HubRuns, AppError> {
+    if let Some(cached) = cache::get_runs(user_id) {
+        return Ok(cached);
+    }
+    let lock = cache::runs_refresh_lock(user_id);
+    let _guard = lock.lock().await;
     if let Some(cached) = cache::get_runs(user_id) {
         return Ok(cached);
     }
@@ -51,8 +56,12 @@ async fn fetch_run_pages(token: &str, repos: &[String]) -> Vec<(String, Vec<Poll
         .map(|repo| {
             let client = &client;
             async move {
-                let Some((owner, name)) = repo.split_once('/') else { return (repo, vec![]) };
-                let runs = list_runs_any_status(client, owner, name).await.unwrap_or_default();
+                let Some((owner, name)) = repo.split_once('/') else {
+                    return (repo, vec![]);
+                };
+                let runs = list_runs_any_status(client, owner, name)
+                    .await
+                    .unwrap_or_default();
                 (repo, runs)
             }
         })

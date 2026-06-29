@@ -3,12 +3,12 @@
 //! status lookup the Jira normalizer needs (spec §5.1), and the paged feed
 //! read (B-lite; activity-feed UI spec §2).
 
+use sea_orm::ActiveValue::{NotSet, Set};
 use sea_orm::prelude::{DateTimeWithTimeZone, Uuid};
 use sea_orm::sea_query::OnConflict;
-use sea_orm::ActiveValue::{NotSet, Set};
 use sea_orm::{
     ColumnTrait, ConnectionTrait, DatabaseConnection, DbBackend, DbErr, EntityTrait, QueryFilter,
-    QueryOrder, QuerySelect, Select, Statement,
+    QueryOrder, QueryResult, QuerySelect, Select, Statement,
 };
 
 use super::entity as events;
@@ -91,10 +91,73 @@ pub struct ListEventsFilter {
     pub scope_key: Option<String>,
 }
 
+#[derive(Debug, Clone)]
+pub struct FailedWorkflowRun {
+    pub repo: String,
+    pub run_id: String,
+    pub workflow_name: String,
+    pub conclusion: String,
+    pub url: String,
+    pub occurred_at: DateTimeWithTimeZone,
+}
+
+const FAILED_WORKFLOW_RUNS_SQL: &str = r#"
+WITH latest AS (
+  SELECT DISTINCT ON (scope_key, payload->>'runId')
+    scope_key,
+    COALESCE(url, '') AS url,
+    occurred_at,
+    COALESCE(NULLIF(payload->>'name', ''), title, 'workflow') AS workflow_name,
+    COALESCE(payload->>'runId', '') AS run_id,
+    COALESCE(payload->>'conclusion', 'unknown') AS conclusion
+  FROM events
+  WHERE user_id = $1
+    AND source = 'github'
+    AND type = 'github.workflow_run.completed'
+    AND payload ? 'runId'
+  ORDER BY scope_key, payload->>'runId', occurred_at DESC, id DESC
+)
+SELECT scope_key, run_id, workflow_name, conclusion, url, occurred_at
+FROM latest
+WHERE conclusion IS DISTINCT FROM 'success'
+ORDER BY occurred_at DESC
+LIMIT $2
+"#;
+
+pub async fn list_recent_failed_workflow_runs(
+    db: &DatabaseConnection,
+    user_id: Uuid,
+    limit: u64,
+) -> Result<Vec<FailedWorkflowRun>, DbErr> {
+    let stmt = Statement::from_sql_and_values(
+        DbBackend::Postgres,
+        FAILED_WORKFLOW_RUNS_SQL,
+        [user_id.into(), (limit.min(100) as i64).into()],
+    );
+    db.query_all_raw(stmt)
+        .await?
+        .into_iter()
+        .map(failed_workflow_run)
+        .collect()
+}
+
+fn failed_workflow_run(row: QueryResult) -> Result<FailedWorkflowRun, DbErr> {
+    Ok(FailedWorkflowRun {
+        repo: row.try_get("", "scope_key")?,
+        run_id: row.try_get("", "run_id")?,
+        workflow_name: row.try_get("", "workflow_name")?,
+        conclusion: row.try_get("", "conclusion")?,
+        url: row.try_get("", "url")?,
+        occurred_at: row.try_get("", "occurred_at")?,
+    })
+}
+
 /// Escapes LIKE wildcards so a prefix matches literally. Postgres's default
 /// LIKE escape character is `\` (no `ESCAPE` clause needed).
 fn escape_like(s: &str) -> String {
-    s.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")
+    s.replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
 }
 
 /// Builds the [`list_events_page`] query (shared with the SQL-shape tests so
@@ -168,7 +231,9 @@ mod tests {
     /// Renders the production query builder to SQL without executing it,
     /// so the SQL-shape tests need no DB.
     fn sql_for(user_id: Uuid, filter: &ListEventsFilter) -> String {
-        list_events_query(user_id, filter).build(DbBackend::Postgres).to_string()
+        list_events_query(user_id, filter)
+            .build(DbBackend::Postgres)
+            .to_string()
     }
 
     #[test]
@@ -183,7 +248,10 @@ mod tests {
     #[test]
     fn before_filter_adds_lt_clause() {
         let uid = Uuid::new_v4();
-        let filter = ListEventsFilter { before: Some(999), ..base_filter() };
+        let filter = ListEventsFilter {
+            before: Some(999),
+            ..base_filter()
+        };
         let sql = sql_for(uid, &filter);
         assert!(sql.contains("\"id\" < 999"));
     }
@@ -191,7 +259,10 @@ mod tests {
     #[test]
     fn source_filter_adds_eq_clause() {
         let uid = Uuid::new_v4();
-        let filter = ListEventsFilter { source: Some("github".into()), ..base_filter() };
+        let filter = ListEventsFilter {
+            source: Some("github".into()),
+            ..base_filter()
+        };
         let sql = sql_for(uid, &filter);
         assert!(sql.contains("\"source\" = 'github'"));
     }
@@ -199,7 +270,10 @@ mod tests {
     #[test]
     fn type_prefix_produces_like_pattern() {
         let uid = Uuid::new_v4();
-        let filter = ListEventsFilter { type_prefix: Some("pr.".into()), ..base_filter() };
+        let filter = ListEventsFilter {
+            type_prefix: Some("pr.".into()),
+            ..base_filter()
+        };
         let sql = sql_for(uid, &filter);
         assert!(sql.contains("LIKE 'pr.%'"));
     }
@@ -209,14 +283,22 @@ mod tests {
         // Real event types contain `_` (github.pull_request.*); the pattern
         // must match it literally, not as a single-char wildcard.
         let uid = Uuid::new_v4();
-        let filter =
-            ListEventsFilter { type_prefix: Some("github.pull_request.".into()), ..base_filter() };
+        let filter = ListEventsFilter {
+            type_prefix: Some("github.pull_request.".into()),
+            ..base_filter()
+        };
         // sea_query renders strings containing `\` as Postgres E-strings,
         // doubling each backslash — `E'...\\_...'` reaches LIKE as `\_`.
         let sql = sql_for(uid, &filter);
-        assert!(sql.contains(r"LIKE E'github.pull\\_request.%'"), "got: {sql}");
+        assert!(
+            sql.contains(r"LIKE E'github.pull\\_request.%'"),
+            "got: {sql}"
+        );
 
-        let hostile = ListEventsFilter { type_prefix: Some("%_\\".into()), ..base_filter() };
+        let hostile = ListEventsFilter {
+            type_prefix: Some("%_\\".into()),
+            ..base_filter()
+        };
         let sql = sql_for(uid, &hostile);
         assert!(sql.contains(r"LIKE E'\\%\\_\\\\%'"), "got: {sql}");
     }
@@ -224,8 +306,18 @@ mod tests {
     #[test]
     fn scope_key_filter_adds_eq_clause() {
         let uid = Uuid::new_v4();
-        let filter = ListEventsFilter { scope_key: Some("PROJ".into()), ..base_filter() };
+        let filter = ListEventsFilter {
+            scope_key: Some("PROJ".into()),
+            ..base_filter()
+        };
         let sql = sql_for(uid, &filter);
         assert!(sql.contains("\"scope_key\" = 'PROJ'"));
+    }
+
+    #[test]
+    fn failed_workflow_runs_sql_keeps_latest_non_success() {
+        assert!(FAILED_WORKFLOW_RUNS_SQL.contains("DISTINCT ON (scope_key, payload->>'runId')"));
+        assert!(FAILED_WORKFLOW_RUNS_SQL.contains("conclusion IS DISTINCT FROM 'success'"));
+        assert!(FAILED_WORKFLOW_RUNS_SQL.contains("ORDER BY scope_key, payload->>'runId'"));
     }
 }

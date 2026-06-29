@@ -1,13 +1,14 @@
 //! Notes + reminders routes (`notes` tag). On every save the body is re-parsed
 //! and the derived `reminders` / `note_links` rows are re-synced.
 
-use actix_web::{web, HttpResponse};
+use actix_web::{HttpResponse, web};
 use sea_orm::prelude::Uuid;
 use serde::{Deserialize, Serialize};
 use wf_db::tables::{note_links, notes, reminders};
 
 use crate::auth::AuthUser;
 use crate::error::AppError;
+use crate::hub::cache as hub_cache;
 use crate::notes::parse;
 use crate::state::AppState;
 
@@ -102,7 +103,10 @@ async fn note_detail(
     let backlinks = note_links::backlinks(&state.db, user_id, ticket_key)
         .await?
         .into_iter()
-        .map(|l| NoteBacklink { ticket_key: l.from_ticket, snippet: l.snippet })
+        .map(|l| NoteBacklink {
+            ticket_key: l.from_ticket,
+            snippet: l.snippet,
+        })
         .collect();
     let reminder_rows = reminders::for_ticket(&state.db, user_id, ticket_key).await?;
     Ok(NoteDetail {
@@ -144,8 +148,11 @@ pub(crate) async fn put_note(
     body: web::Json<PutNoteBody>,
 ) -> Result<HttpResponse, AppError> {
     let user_id = user_id(&user)?;
-    let tz: chrono_tz::Tz =
-        query.tz.as_deref().and_then(|t| t.parse().ok()).unwrap_or(chrono_tz::UTC);
+    let tz: chrono_tz::Tz = query
+        .tz
+        .as_deref()
+        .and_then(|t| t.parse().ok())
+        .unwrap_or(chrono_tz::UTC);
 
     notes::upsert(&state.db, user_id, &body.ticket_key, &body.body).await?;
 
@@ -162,6 +169,8 @@ pub(crate) async fn put_note(
         })
         .collect();
     reminders::sync_for_ticket(&state.db, user_id, &body.ticket_key, inputs).await?;
+    hub_cache::invalidate_board(user_id);
+    hub_cache::invalidate_inbox(user_id);
 
     let detail = note_detail(&state, user_id, &body.ticket_key).await?;
     Ok(HttpResponse::Ok().json(detail))
@@ -195,9 +204,12 @@ pub(crate) async fn reminder_done(
     user: AuthUser,
     body: web::Json<ReminderRefBody>,
 ) -> Result<HttpResponse, AppError> {
-    let row = reminders::set_done(&state.db, user_id(&user)?, &body.id)
+    let uid = user_id(&user)?;
+    let row = reminders::set_done(&state.db, uid, &body.id)
         .await?
         .ok_or_else(|| AppError::not_found("Unknown reminder id."))?;
+    hub_cache::invalidate_board(uid);
+    hub_cache::invalidate_inbox(uid);
     Ok(HttpResponse::Ok().json(reminder_of(row)))
 }
 
@@ -212,11 +224,14 @@ pub(crate) async fn reminder_snooze(
     user: AuthUser,
     body: web::Json<ReminderSnoozeBody>,
 ) -> Result<HttpResponse, AppError> {
+    let uid = user_id(&user)?;
     let until = chrono::DateTime::parse_from_rfc3339(&body.until)
         .map_err(|_| AppError::validation("`until` must be an ISO 8601 instant."))?;
-    let row = reminders::snooze(&state.db, user_id(&user)?, &body.id, until)
+    let row = reminders::snooze(&state.db, uid, &body.id, until)
         .await?
         .ok_or_else(|| AppError::not_found("Unknown reminder id."))?;
+    hub_cache::invalidate_board(uid);
+    hub_cache::invalidate_inbox(uid);
     Ok(HttpResponse::Ok().json(reminder_of(row)))
 }
 

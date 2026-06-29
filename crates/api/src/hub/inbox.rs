@@ -6,13 +6,13 @@
 use std::collections::HashMap;
 
 use sea_orm::prelude::Uuid;
-use wf_db::tables::{reminders, slack_messages};
+use wf_db::tables::{events, reminders, slack_messages};
+use wf_github::dashboard::types::GithubPullRequestQueue;
 use wf_github::{GithubPullRequestBasic, GithubQueueKey};
 
 use crate::error::AppError;
-use crate::hub::types::{
-    HubInbox, HubInboxItem, HubInboxQa, HubInboxReview, HubInboxRun, HubRunPill,
-};
+use crate::hub::cache;
+use crate::hub::types::{HubInbox, HubInboxItem, HubInboxQa, HubInboxReview, HubInboxRun};
 use crate::notes::routes::reminder_of;
 use crate::state::AppState;
 
@@ -21,15 +21,30 @@ const MAX_REVIEWS: usize = 8;
 const MAX_RUNS: usize = 6;
 
 pub async fn inbox(state: &AppState, user_id: Uuid) -> Result<HubInbox, AppError> {
+    if let Some(cached) = cache::get_inbox(user_id) {
+        return Ok(cached);
+    }
     let mut items: Vec<(i64, HubInboxItem)> = Vec::new();
-    items.extend(qa_items(state, user_id).await?);
-    items.extend(run_items(state, user_id).await);
-    items.extend(review_items(state, user_id).await);
-    items.extend(reminder_items(state, user_id).await?);
+    let (qa, runs, reviews, reminders) = tokio::join!(
+        qa_items(state, user_id),
+        run_items(state, user_id),
+        review_items(state, user_id),
+        reminder_items(state, user_id)
+    );
+    items.extend(qa?);
+    items.extend(runs?);
+    items.extend(reviews);
+    items.extend(reminders?);
 
     let ranked = rank(items);
     let brief = morning_brief(state, user_id, &ranked).await;
-    Ok(HubInbox { items: ranked, brief, ranked_by: "heuristic".to_string() })
+    let inbox = HubInbox {
+        items: ranked,
+        brief,
+        ranked_by: "heuristic".to_string(),
+    };
+    cache::put_inbox(user_id, &inbox);
+    Ok(inbox)
 }
 
 /// QA band: latest unread Slack message per ticket, with unread count attached.
@@ -37,7 +52,9 @@ async fn qa_items(state: &AppState, user_id: Uuid) -> Result<Vec<(i64, HubInboxI
     let unread = slack_messages::list_unread(&state.db, user_id, 100).await?;
     let mut per_ticket: HashMap<String, (i64, slack_messages::Model)> = HashMap::new();
     for row in unread {
-        let Some(key) = row.ticket_key.clone() else { continue };
+        let Some(key) = row.ticket_key.clone() else {
+            continue;
+        };
         let entry = per_ticket.entry(key).or_insert((0, row.clone()));
         entry.0 += 1;
         if row.posted_at > entry.1.posted_at {
@@ -72,35 +89,29 @@ fn qa_item(key: String, count: i64, latest: slack_messages::Model) -> HubInboxIt
     }
 }
 
-/// Failed-run band: failed entries from the cached actions-strip snapshot.
-async fn run_items(state: &AppState, user_id: Uuid) -> Vec<(i64, HubInboxItem)> {
-    let Ok(runs) = crate::hub::runs::runs(state, user_id).await else {
-        return Vec::new();
-    };
-    runs.runs
-        .iter()
-        .filter(|p| p.status == "failed")
-        .take(MAX_RUNS)
-        .map(|pill| (0, run_item(pill)))
-        .collect()
+/// Failed-run band: latest non-success workflow run events from the sync table.
+async fn run_items(state: &AppState, user_id: Uuid) -> Result<Vec<(i64, HubInboxItem)>, AppError> {
+    let runs =
+        events::list_recent_failed_workflow_runs(&state.db, user_id, MAX_RUNS as u64).await?;
+    Ok(runs.into_iter().map(|run| (0, run_item(run))).collect())
 }
 
-fn run_item(pill: &HubRunPill) -> HubInboxItem {
+fn run_item(run: events::FailedWorkflowRun) -> HubInboxItem {
     HubInboxItem {
-        id: format!("run:{}:{}", pill.repo, pill.run_id),
+        id: format!("run:{}:{}", run.repo, run.run_id),
         kind: "run".to_string(),
         ticket_key: None,
-        source_label: format!("CI · {}", pill.workflow_name),
-        title: format!("{} failed on {}", pill.workflow_name, pill.repo),
-        occurred_at: pill.started_at.clone(),
+        source_label: format!("CI · {}", run.workflow_name),
+        title: format!("{} failed on {}", run.workflow_name, run.repo),
+        occurred_at: run.occurred_at.to_rfc3339(),
         urgency: String::new(),
         qa: None,
         run: Some(HubInboxRun {
-            repo: pill.repo.clone(),
-            run_id: pill.run_id.clone(),
-            workflow_name: pill.workflow_name.clone(),
-            conclusion: "failure".to_string(),
-            url: pill.url.clone(),
+            repo: run.repo,
+            run_id: run.run_id,
+            workflow_name: run.workflow_name,
+            conclusion: run.conclusion,
+            url: run.url,
         }),
         review: None,
         reminder: None,
@@ -109,9 +120,7 @@ fn run_item(pill: &HubRunPill) -> HubInboxItem {
 
 /// Review band: the existing review-requested dashboard queue.
 async fn review_items(state: &AppState, user_id: Uuid) -> Vec<(i64, HubInboxItem)> {
-    let Ok(queue) =
-        crate::github::dashboard::get_queue(state, user_id, GithubQueueKey::ReviewRequested).await
-    else {
+    let Ok(queue) = review_queue(state, user_id, GithubQueueKey::ReviewRequested).await else {
         return Vec::new();
     };
     queue
@@ -120,6 +129,19 @@ async fn review_items(state: &AppState, user_id: Uuid) -> Vec<(i64, HubInboxItem
         .take(MAX_REVIEWS)
         .map(|pull| (1, review_item(pull)))
         .collect()
+}
+
+async fn review_queue(
+    state: &AppState,
+    user_id: Uuid,
+    key: GithubQueueKey,
+) -> Result<GithubPullRequestQueue, AppError> {
+    if let Some(cached) = cache::get_review_queue(user_id, key) {
+        return Ok(cached);
+    }
+    let queue = crate::github::dashboard::get_queue(state, user_id, key).await?;
+    cache::put_review_queue(user_id, key, &queue);
+    Ok(queue)
 }
 
 fn review_item(pull: &GithubPullRequestBasic) -> HubInboxItem {
@@ -189,14 +211,32 @@ async fn morning_brief(
     user_id: Uuid,
     items: &[HubInboxItem],
 ) -> Option<crate::hub::types::HubBrief> {
-    let settings = crate::ai::settings::get(state, user_id).await.ok()?;
-    if !settings.morning_brief {
+    if !brief_enabled(state, user_id).await? {
         return None;
     }
-    if let Some(cached) = crate::hub::cache::get_brief(user_id) {
+    if let Some(cached) = cache::get_brief(user_id) {
         return Some(cached);
     }
     crate::ai::openai::require_key(state).ok()?;
+    let summary = complete_brief(state, items).await?;
+    let brief = crate::hub::types::HubBrief {
+        summary,
+        generated_at: chrono::Utc::now().to_rfc3339(),
+    };
+    cache::put_brief(user_id, &brief);
+    Some(brief)
+}
+
+async fn brief_enabled(state: &AppState, user_id: Uuid) -> Option<bool> {
+    Some(
+        crate::ai::settings::get(state, user_id)
+            .await
+            .ok()?
+            .morning_brief,
+    )
+}
+
+async fn complete_brief(state: &AppState, items: &[HubInboxItem]) -> Option<String> {
     let digest = brief_digest(items);
     let system = "You write a 2-3 sentence 'morning brief' for a developer's \
         dashboard, summarizing what most needs their attention right now \
@@ -206,11 +246,9 @@ async fn morning_brief(
     } else {
         format!("Current items, most urgent first:\n{digest}")
     };
-    let summary = crate::ai::openai::complete(state, system, &prompt).await.ok()?;
-    let brief =
-        crate::hub::types::HubBrief { summary, generated_at: chrono::Utc::now().to_rfc3339() };
-    crate::hub::cache::put_brief(user_id, &brief);
-    Some(brief)
+    crate::ai::openai::complete(state, system, &prompt)
+        .await
+        .ok()
 }
 
 fn brief_digest(items: &[HubInboxItem]) -> String {
