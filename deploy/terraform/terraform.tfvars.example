@@ -9,3 +9,4 @@ collector_config_secret_id      = "wf-otel-collector-config"
 # App secret container IDs (values are populated out-of-band, not by Terraform).
 database_url_secret_id                 = "wf-database-url"
 github_token_encryption_key_secret_id  = "wf-github-token-encryption-key"
+openai_api_key_secret_id               = "wf-openai-api-key"

@@ -4,7 +4,7 @@ members = ["crates/core", "crates/db", "crates/github", "crates/jira", "crates/s
 
 [workspace.package]
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 license = "UNLICENSED"
 
 # Enable the (allow-by-default, pedantic) `too_many_lines` lint so the
@@ -39,7 +39,7 @@ thiserror = "2"
 anyhow = "1"
 
 # ORM / DB
-sea-orm = { version = "2.0.0-rc.40", default-features = false, features = [
+sea-orm = { version = "2.0.0-rc.41", default-features = false, features = [
     "sqlx-postgres",
     "runtime-tokio-rustls",
     "macros",

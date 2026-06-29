@@ -554,12 +554,21 @@
             "format": "int64",
             "type": "integer"
           },
+          "state": {
+            "description": "`open` | `draft` | `merged` | `closed`",
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
           "url": {
             "type": "string"
           }
         },
         "required": [
           "number",
+          "title",
+          "state",
           "url"
         ],
         "type": "object"
@@ -1031,7 +1040,7 @@
               "null"
             ]
           },
-          "repoFullName": {
+          "repo": {
             "type": "string"
           },
           "repoUrl": {
@@ -1045,7 +1054,7 @@
           }
         },
         "required": [
-          "repoFullName",
+          "repo",
           "repoUrl",
           "defaultBranch",
           "workflows"
@@ -1123,7 +1132,7 @@
               "null"
             ]
           },
-          "name": {
+          "id": {
             "type": "string"
           },
           "options": {
@@ -1140,7 +1149,7 @@
           }
         },
         "required": [
-          "name",
+          "id",
           "required",
           "type",
           "options"
@@ -1388,13 +1397,10 @@
       "HubFavoriteWorkflow": {
         "properties": {
           "lastRun": {
-            "oneOf": [
-              {
-                "type": "null"
-              },
-              {
-                "$ref": "#/components/schemas/HubRunPill"
-              }
+            "description": "ISO-8601 millis of the favorite workflow's most recent run, or null.",
+            "type": [
+              "string",
+              "null"
             ]
           },
           "path": {
@@ -1404,8 +1410,7 @@
             "type": "string"
           },
           "workflowId": {
-            "format": "int64",
-            "type": "integer"
+            "type": "string"
           },
           "workflowName": {
             "type": "string"
@@ -1513,9 +1518,8 @@
             "type": "string"
           },
           "urgency": {
-            "description": "Rank position (0 = most urgent).",
-            "format": "int64",
-            "type": "integer"
+            "description": "Rank position as a string, ascending (`\"0\"` = most urgent).",
+            "type": "string"
           }
         },
         "required": [
@@ -1587,8 +1591,7 @@
             "type": "string"
           },
           "runId": {
-            "format": "int64",
-            "type": "integer"
+            "type": "string"
           },
           "url": {
             "type": "string"
@@ -1642,7 +1645,7 @@
             "type": "number"
           },
           "source": {
-            "description": "`ai` | `heuristic`",
+            "description": "matcher that produced the suggestion — currently always `heuristic`",
             "type": "string"
           },
           "ticketKey": {
@@ -1815,8 +1818,7 @@
             "type": "string"
           },
           "runId": {
-            "format": "int64",
-            "type": "integer"
+            "type": "string"
           },
           "startedAt": {
             "type": "string"
@@ -1835,8 +1837,7 @@
             ]
           },
           "workflowId": {
-            "format": "int64",
-            "type": "integer"
+            "type": "string"
           },
           "workflowName": {
             "type": "string"
@@ -2209,11 +2210,15 @@
           },
           "key": {
             "type": "string"
+          },
+          "url": {
+            "type": "string"
           }
         },
         "required": [
           "id",
-          "key"
+          "key",
+          "url"
         ],
         "type": "object"
       },
@@ -2599,18 +2604,30 @@
           "name": {
             "type": "string"
           },
-          "toCategory": {
-            "type": "string"
-          },
-          "toStatus": {
-            "type": "string"
+          "to": {
+            "$ref": "#/components/schemas/JiraTransitionTo"
           }
         },
         "required": [
           "id",
           "name",
-          "toStatus",
-          "toCategory"
+          "to"
+        ],
+        "type": "object"
+      },
+      "JiraTransitionTo": {
+        "description": "Target status of a transition (contract: `to: { id, name }`).",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
         ],
         "type": "object"
       },

@@ -8,3 +8,13 @@ tmp
 .env
 otel-config.yaml
 *.test
+graphify-out
+.claude
+.codex
+.idea
+backend
+docs
+scripts
+**.md
+clippy.toml
+justfile

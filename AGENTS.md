@@ -58,7 +58,7 @@ Rules:
 - `.env` is auto-loaded via dotenvy: `cargo run -p wf-api` works without sourcing. `.env` is gitignored.
 - `OPENAI_API_KEY` powers the AI assists (`gpt-5-mini` via `async-openai`); when absent the AI endpoints no-op rather than erroring (`core/config.rs`, `api/src/ai/`).
 - Live smoke harnesses (need `.env` + real data): `cargo run -p wf-db --example {phase0,gh_validate,gh_repo,gh_dashboard,gh_repo_write}`.
-- Web client: `../workflow` (React 19 + TanStack Router/Query + Mantine, Orval-generated client). Sync API types there: `yarn api:spec && yarn api:gen`. Its gates are `yarn type`/`lint`/`build` — it has NO test framework; don't add one.
+- Web client: `../workflow` (React 19 + TanStack Router/Query + Mantine, Orval-generated client). Sync API types there: `yarn api:spec && yarn api:gen`. Its gates are `yarn type`/`lint`/`build`/`test`.
 
 ## Dependency feature gotchas
 - `jsonwebtoken` → `features=["rust_crypto"]` (else runtime "CryptoProvider" panic).

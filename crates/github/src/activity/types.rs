@@ -37,7 +37,7 @@ pub struct GithubWorkflowSummary {
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct GithubRepoWorkflows {
-    pub repo_full_name: String,
+    pub repo: String,
     pub repo_url: String,
     pub default_branch: String,
     pub workflows: Vec<GithubWorkflowSummary>,
@@ -57,7 +57,7 @@ pub enum GithubWorkflowInputType {
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct GithubWorkflowInput {
-    pub name: String,
+    pub id: String,
     pub description: Option<String>,
     pub required: bool,
     pub r#type: GithubWorkflowInputType,
@@ -87,6 +87,9 @@ pub struct GithubCreatePullInput {
 #[serde(rename_all = "camelCase")]
 pub struct GithubCreatePullResult {
     pub number: i64,
+    pub title: String,
+    /// `open` | `draft` | `merged` | `closed`
+    pub state: String,
     pub url: String,
 }
 

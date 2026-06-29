@@ -76,7 +76,7 @@ fn to_input(name: &str, spec: &Value) -> GithubWorkflowInput {
     let empty_map = serde_yaml::Mapping::new();
     let s = spec.as_mapping().unwrap_or(&empty_map);
     GithubWorkflowInput {
-        name: name.to_string(),
+        id: name.to_string(),
         description: s.get("description").and_then(Value::as_str).map(String::from),
         required: s.get("required").and_then(Value::as_bool) == Some(true),
         r#type: to_type(s.get("type")),
@@ -187,7 +187,7 @@ on:
         assert_eq!(out.inputs.len(), 3);
 
         let env = &out.inputs[0];
-        assert_eq!(env.name, "env");
+        assert_eq!(env.id, "env");
         assert_eq!(env.description.as_deref(), Some("Target environment"));
         assert!(env.required);
         assert_eq!(env.r#type, GithubWorkflowInputType::Choice);

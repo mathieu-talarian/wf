@@ -14,6 +14,10 @@ use crate::errors::GithubError;
 #[derive(Deserialize)]
 struct ApiCreatedPull {
     number: i64,
+    title: String,
+    state: String,
+    #[serde(default)]
+    draft: bool,
     html_url: String,
 }
 
@@ -39,7 +43,13 @@ pub async fn create_pull(
             .await?;
     let created: ApiCreatedPull =
         resp.json().await.map_err(|e| GithubError::Api(e.to_string()))?;
-    Ok(GithubCreatePullResult { number: created.number, url: created.html_url })
+    let state = if created.draft { "draft".to_string() } else { created.state };
+    Ok(GithubCreatePullResult {
+        number: created.number,
+        title: created.title,
+        state,
+        url: created.html_url,
+    })
 }
 
 #[derive(Deserialize)]

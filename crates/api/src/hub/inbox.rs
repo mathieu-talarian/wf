@@ -59,7 +59,7 @@ fn qa_item(key: String, count: i64, latest: slack_messages::Model) -> HubInboxIt
         source_label: format!("#{}", latest.channel_name),
         title: truncate(&latest.body, 140),
         occurred_at: latest.posted_at.to_rfc3339(),
-        urgency: 0,
+        urgency: String::new(),
         qa: Some(HubInboxQa {
             channel_id: latest.channel_id,
             thread_ts: latest.thread_ts,
@@ -93,11 +93,11 @@ fn run_item(pill: &HubRunPill) -> HubInboxItem {
         source_label: format!("CI · {}", pill.workflow_name),
         title: format!("{} failed on {}", pill.workflow_name, pill.repo),
         occurred_at: pill.started_at.clone(),
-        urgency: 0,
+        urgency: String::new(),
         qa: None,
         run: Some(HubInboxRun {
             repo: pill.repo.clone(),
-            run_id: pill.run_id,
+            run_id: pill.run_id.clone(),
             workflow_name: pill.workflow_name.clone(),
             conclusion: "failure".to_string(),
             url: pill.url.clone(),
@@ -130,7 +130,7 @@ fn review_item(pull: &GithubPullRequestBasic) -> HubInboxItem {
         source_label: "review requested".to_string(),
         title: pull.title.clone(),
         occurred_at: pull.updated_at.clone(),
-        urgency: 0,
+        urgency: String::new(),
         qa: None,
         run: None,
         review: Some(HubInboxReview {
@@ -160,7 +160,7 @@ fn reminder_item(row: reminders::Model) -> HubInboxItem {
         source_label: "reminder".to_string(),
         title: row.body.clone(),
         occurred_at: row.due_at.to_rfc3339(),
-        urgency: 0,
+        urgency: String::new(),
         qa: None,
         run: None,
         review: None,
@@ -176,7 +176,7 @@ fn rank(mut items: Vec<(i64, HubInboxItem)>) -> Vec<HubInboxItem> {
         .into_iter()
         .enumerate()
         .map(|(i, (_, mut item))| {
-            item.urgency = i as i64;
+            item.urgency = i.to_string();
             item
         })
         .collect()

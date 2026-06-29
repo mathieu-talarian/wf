@@ -30,6 +30,19 @@ fn iso(dt: Option<DateTimeWithTimeZone>) -> Option<String> {
     dt.map(|d| d.with_timezone(&chrono::Utc).to_rfc3339_opts(SecondsFormat::Millis, true))
 }
 
+/// Collapse a stored validation status to the contract's 4 values
+/// (`valid|expired|invalid|unchecked`). Shared by the GitHub + Jira summaries
+/// (both persist the richer internal enum strings).
+pub(crate) fn to_contract_status(s: &str) -> String {
+    match s {
+        "valid" => "valid",
+        "expired" => "expired",
+        "needs_sso" | "needs_org_approval" | "missing_permissions" | "invalid" => "invalid",
+        _ => "unchecked",
+    }
+    .to_string()
+}
+
 pub fn from_row(row: Option<jira::Model>) -> JiraConnectionSummary {
     match row {
         None => JiraConnectionSummary { connected: false, ..Default::default() },
@@ -40,7 +53,7 @@ pub fn from_row(row: Option<jira::Model>) -> JiraConnectionSummary {
             display_name: Some(row.display_name),
             email: Some(row.email),
             selected_projects: json_string_array(&row.selected_projects),
-            validation_status: Some(row.validation_status),
+            validation_status: Some(to_contract_status(&row.validation_status)),
             validation_error: row.validation_error,
             last_validated_at: iso(row.last_validated_at),
             last_used_at: iso(row.last_used_at),

@@ -192,10 +192,10 @@ pub fn build_issue_fields(
     if input.len() > opts.max_fields.unwrap_or(DEFAULT_MAX_FIELDS) {
         return Err("Too many fields.".to_string());
     }
-    if opts.enforce_required {
-        if let Some(missing) = missing_required(meta, input) {
-            return Err(missing);
-        }
+    if opts.enforce_required
+        && let Some(missing) = missing_required(meta, input)
+    {
+        return Err(missing);
     }
     coerce_all(meta, input, opts.max_text_length.unwrap_or(DEFAULT_MAX_TEXT))
 }

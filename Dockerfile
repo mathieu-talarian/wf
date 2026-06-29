@@ -5,7 +5,7 @@ WORKDIR /app
 # a layer is invalidated (e.g. a dependency bump busts the cook layer), only the
 # crates that actually changed are recompiled; the rest are pulled from the
 # cache. Install the prebuilt musl binary rather than `cargo install` (no build).
-ARG SCCACHE_VERSION=0.10.0
+ARG SCCACHE_VERSION=0.16.0
 RUN curl -fsSL "https://github.com/mozilla/sccache/releases/download/v${SCCACHE_VERSION}/sccache-v${SCCACHE_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
       | tar -xz -C /tmp \
   && mv "/tmp/sccache-v${SCCACHE_VERSION}-x86_64-unknown-linux-musl/sccache" /usr/local/bin/sccache \

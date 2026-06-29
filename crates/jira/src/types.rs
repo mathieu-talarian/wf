@@ -55,8 +55,15 @@ pub struct JiraComment {
 pub struct JiraTransition {
     pub id: String,
     pub name: String,
-    pub to_status: String,
-    pub to_category: String,
+    pub to: JiraTransitionTo,
+}
+
+/// Target status of a transition (contract: `to: { id, name }`).
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct JiraTransitionTo {
+    pub id: String,
+    pub name: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
@@ -178,6 +185,7 @@ pub struct JiraBoard {
 pub struct JiraCreateIssueResult {
     pub id: String,
     pub key: String,
+    pub url: String,
 }
 
 #[derive(Debug, Clone, Deserialize, utoipa::ToSchema)]

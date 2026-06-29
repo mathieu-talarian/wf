@@ -23,10 +23,10 @@ const BLOCK_TYPES: [&str; 2] = ["paragraph", "heading"];
 
 fn walk(node: &Value, acc: &mut String) {
     let node_type = node.get("type").and_then(Value::as_str);
-    if node_type == Some("text") {
-        if let Some(text) = node.get("text").and_then(Value::as_str) {
-            acc.push_str(text);
-        }
+    if node_type == Some("text")
+        && let Some(text) = node.get("text").and_then(Value::as_str)
+    {
+        acc.push_str(text);
     }
     if let Some(children) = node.get("content").and_then(Value::as_array) {
         for child in children {

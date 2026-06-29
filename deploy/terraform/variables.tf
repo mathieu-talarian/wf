@@ -39,6 +39,12 @@ variable "github_token_encryption_key_secret_id" {
   default     = "wf-github-token-encryption-key"
 }
 
+variable "openai_api_key_secret_id" {
+  description = "Secret Manager secret ID holding OPENAI_API_KEY (powers the AI assists). Container is created empty; populate the value out-of-band."
+  type        = string
+  default     = "wf-openai-api-key"
+}
+
 variable "runtime_service_account_email" {
   description = "Cloud Run runtime service account email. Defaults to the project's Compute Engine default service account."
   type        = string

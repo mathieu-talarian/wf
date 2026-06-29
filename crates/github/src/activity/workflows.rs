@@ -36,7 +36,7 @@ fn to_summary(w: ApiWorkflow) -> GithubWorkflowSummary {
 
 fn error_repo(coord: &RepoCoord) -> GithubRepoWorkflows {
     GithubRepoWorkflows {
-        repo_full_name: coord.full_name.clone(),
+        repo: coord.full_name.clone(),
         repo_url: format!("https://github.com/{}", coord.full_name),
         default_branch: String::new(),
         workflows: vec![],
@@ -64,7 +64,7 @@ async fn fetch_repo_workflows(client: &GithubClient, coord: &RepoCoord) -> Githu
 /// workflows (port of `fetchWorkflows`' filter).
 fn ok_repo(coord: &RepoCoord, data: ApiWorkflows) -> GithubRepoWorkflows {
     GithubRepoWorkflows {
-        repo_full_name: coord.full_name.clone(),
+        repo: coord.full_name.clone(),
         repo_url: format!("https://github.com/{}", coord.full_name),
         default_branch: String::new(),
         workflows: data

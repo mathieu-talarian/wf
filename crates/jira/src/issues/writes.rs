@@ -136,7 +136,12 @@ pub async fn create_issue(
         .post("/rest/api/3/issue", &json!({ "fields": fields }))
         .await
         .map_err(JiraActionError::as_write)?;
-    Ok(JiraCreateIssueResult { id: res.id.unwrap_or_default(), key: res.key.unwrap_or_default() })
+    let key = res.key.unwrap_or_default();
+    Ok(JiraCreateIssueResult {
+        id: res.id.unwrap_or_default(),
+        url: format!("{}/browse/{}", client.site_url(), key),
+        key,
+    })
 }
 
 pub async fn edit_issue(

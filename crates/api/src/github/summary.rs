@@ -5,6 +5,7 @@ use chrono::SecondsFormat;
 use sea_orm::prelude::DateTimeWithTimeZone;
 use serde::Serialize;
 use serde_json::Value;
+use crate::jira::summary::to_contract_status;
 use wf_db::tables::github_pat_connections as gh;
 
 #[derive(Serialize, Default, utoipa::ToSchema)]
@@ -66,7 +67,7 @@ pub fn from_row(row: Option<gh::Model>) -> GithubConnectionSummary {
             token_kind: Some(row.token_kind),
             scopes: split_scopes(row.scope.as_deref()),
             selected_repos: json_string_array(&row.selected_repos),
-            validation_status: Some(row.validation_status),
+            validation_status: Some(to_contract_status(&row.validation_status)),
             validation_error: row.validation_error,
             last_validated_at: iso(row.last_validated_at),
             last_used_at: iso(row.last_used_at),

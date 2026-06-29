@@ -32,6 +32,8 @@ cd deploy/terraform
 cp terraform.tfvars.example terraform.tfvars   # edit if needed
 terraform init
 terraform apply
+export SCCACHE_BUCKET="$(terraform output -raw sccache_bucket_name)"
+cd ../..
 
 # 3. Populate the app secret values (Terraform creates only empty containers).
 #    DATABASE_URL MUST be the Supabase *session* pooler (…pooler.supabase.com:5432) —
@@ -45,9 +47,11 @@ printf '%s' 'BASE64_32_BYTE_KEY' \
 ## Deploy
 
 ```bash
+export SCCACHE_BUCKET="$(terraform -chdir=deploy/terraform output -raw sccache_bucket_name)"
+
 gcloud builds submit --config cloudbuild.yaml \
   --project workflow-497713 \
-  --substitutions=_SUPABASE_URL=https://YOURPROJ.supabase.co,_CORS_ORIGINS=https://app.example.com,_WEB_APP_URL=https://app.example.com
+  --substitutions=_SCCACHE_BUCKET="${SCCACHE_BUCKET}",_SUPABASE_URL=https://YOURPROJ.supabase.co,_CORS_ORIGINS=https://app.example.com,_WEB_APP_URL=https://app.example.com
 ```
 
 `DATABASE_URL` and `GITHUB_TOKEN_ENCRYPTION_KEY` are injected from Secret Manager

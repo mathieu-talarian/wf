@@ -323,7 +323,7 @@ async fn assemble_board(
 fn index_workflows(workflow_repos: &[GithubRepoWorkflows]) -> HashMap<&str, &[GithubWorkflowSummary]> {
     workflow_repos
         .iter()
-        .map(|w| (w.repo_full_name.as_str(), w.workflows.as_slice()))
+        .map(|w| (w.repo.as_str(), w.workflows.as_slice()))
         .collect()
 }
 
@@ -419,13 +419,15 @@ fn resolve_favorite(card_repo: Option<String>, ctx: &CardContext) -> Option<HubF
     let ids = ctx.inputs.badges.favorites.get(&repo)?;
     let id = *ids.first()?;
     let summary = ctx.workflows_by_repo.get(repo.as_str())?.iter().find(|w| w.id == id)?;
+    let id_s = id.to_string();
     let last_run = ctx
         .runs
         .as_ref()
-        .and_then(|r| r.runs.iter().find(|p| p.repo == repo && p.workflow_id == id).cloned());
+        .and_then(|r| r.runs.iter().find(|p| p.repo == repo && p.workflow_id == id_s))
+        .map(|p| p.started_at.clone());
     Some(HubFavoriteWorkflow {
         repo,
-        workflow_id: id,
+        workflow_id: id_s,
         workflow_name: summary.name.clone(),
         path: summary.path.clone(),
         last_run,

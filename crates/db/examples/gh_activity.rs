@@ -84,11 +84,11 @@ async fn collect_workflows(
     let workflows = fetch_workflows(token, repos).await;
     let mut first: Option<(String, String, i64)> = None;
     for rw in &workflows {
-        println!("  {} workflows={} err={:?}", rw.repo_full_name, rw.workflows.len(), rw.error);
+        println!("  {} workflows={} err={:?}", rw.repo, rw.workflows.len(), rw.error);
         for w in rw.workflows.iter().take(3) {
             println!("     - #{} {} [{}]", w.id, w.name, w.path);
             if first.is_none() && w.path.starts_with(".github/") {
-                first = Some((rw.repo_full_name.clone(), w.path.clone(), w.id));
+                first = Some((rw.repo.clone(), w.path.clone(), w.id));
             }
         }
     }
@@ -116,7 +116,7 @@ async fn probe_first_workflow(
 
     let default_branch = workflows
         .iter()
-        .find(|w| w.repo_full_name == full_name)
+        .find(|w| w.repo == full_name)
         .map(|w| w.default_branch.clone())
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "main".to_string());
@@ -140,7 +140,7 @@ async fn print_workflow_inputs(
     let inputs = fetch_workflow_inputs(token, r, path).await?;
     println!("  dispatchable={} inputs={}", inputs.dispatchable, inputs.inputs.len());
     for i in &inputs.inputs {
-        println!("     - {} type={:?} required={} default={:?} options={:?}", i.name, i.r#type, i.required, i.default, i.options);
+        println!("     - {} type={:?} required={} default={:?} options={:?}", i.id, i.r#type, i.required, i.default, i.options);
     }
     Ok(())
 }

@@ -9,7 +9,7 @@ use super::adf::adf_to_text;
 use crate::types::{
     JiraAllowedRef, JiraBoard, JiraComment, JiraDescriptorSchema, JiraFieldDescriptor,
     JiraIssueDetail, JiraIssueSummary, JiraIssueType, JiraNamedIcon, JiraProject, JiraStatus,
-    JiraTransition, JiraUser,
+    JiraTransition, JiraTransitionTo, JiraUser,
 };
 
 #[derive(Debug, Clone, Deserialize)]
@@ -91,9 +91,8 @@ pub struct RawIssue {
 
 #[derive(Debug, Clone, Deserialize)]
 struct RawTransitionTo {
+    id: Option<String>,
     name: Option<String>,
-    #[serde(rename = "statusCategory")]
-    status_category: Option<RawStatusCategory>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -217,16 +216,14 @@ pub fn map_issue_detail(site_url: &str, raw: &RawIssue) -> JiraIssueDetail {
 }
 
 pub fn map_transition(raw: &RawTransition) -> JiraTransition {
+    let to = raw.to.as_ref();
     JiraTransition {
         id: raw.id.clone().unwrap_or_default(),
         name: raw.name.clone().unwrap_or_default(),
-        to_status: raw.to.as_ref().and_then(|t| t.name.clone()).unwrap_or_default(),
-        to_category: raw
-            .to
-            .as_ref()
-            .and_then(|t| t.status_category.as_ref())
-            .and_then(|c| c.key.clone())
-            .unwrap_or_else(|| "undefined".to_string()),
+        to: JiraTransitionTo {
+            id: to.and_then(|t| t.id.clone()).unwrap_or_default(),
+            name: to.and_then(|t| t.name.clone()).unwrap_or_default(),
+        },
     }
 }
 

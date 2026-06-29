@@ -84,9 +84,9 @@ fn build_pills(
 fn run_pill(repo: &str, run: &PolledWorkflowRun, is_favorite: bool) -> HubRunPill {
     HubRunPill {
         repo: repo.to_string(),
-        workflow_id: run.workflow_id.unwrap_or_default(),
+        workflow_id: run.workflow_id.unwrap_or_default().to_string(),
         workflow_name: run.name.clone().unwrap_or_else(|| "workflow".to_string()),
-        run_id: run.id,
+        run_id: run.id.to_string(),
         status: run_status(run).to_string(),
         version: None,
         started_at: run.created_at.to_rfc3339(),

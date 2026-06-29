@@ -75,10 +75,11 @@ pub struct HubDeployment {
 #[serde(rename_all = "camelCase")]
 pub struct HubFavoriteWorkflow {
     pub repo: String,
-    pub workflow_id: i64,
+    pub workflow_id: String,
     pub workflow_name: String,
     pub path: String,
-    pub last_run: Option<HubRunPill>,
+    /// ISO-8601 millis of the favorite workflow's most recent run, or null.
+    pub last_run: Option<String>,
 }
 
 #[derive(Serialize, Clone, utoipa::ToSchema)]
@@ -121,7 +122,7 @@ pub struct HubOrphanTicket {
 pub struct HubLinkSuggestion {
     pub ticket_key: String,
     pub confidence: f64,
-    /// `ai` | `heuristic`
+    /// matcher that produced the suggestion — currently always `heuristic`
     pub source: String,
 }
 
@@ -161,8 +162,10 @@ pub struct HubInboxItem {
     pub source_label: String,
     pub title: String,
     pub occurred_at: String,
-    /// Rank position (0 = most urgent).
-    pub urgency: i64,
+    /// Rank position as a string, ascending (`"0"` = most urgent).
+    // ponytail: contract types this `string` but names no vocabulary; we
+    // stringify the existing rank. Swap to labels if the UI ever needs them.
+    pub urgency: String,
     pub qa: Option<HubInboxQa>,
     pub run: Option<HubInboxRun>,
     pub review: Option<HubInboxReview>,
@@ -182,7 +185,7 @@ pub struct HubInboxQa {
 #[serde(rename_all = "camelCase")]
 pub struct HubInboxRun {
     pub repo: String,
-    pub run_id: i64,
+    pub run_id: String,
     pub workflow_name: String,
     pub conclusion: String,
     pub url: String,
@@ -208,9 +211,9 @@ pub struct HubRuns {
 pub struct HubRunPill {
     /// `owner/name`
     pub repo: String,
-    pub workflow_id: i64,
+    pub workflow_id: String,
     pub workflow_name: String,
-    pub run_id: i64,
+    pub run_id: String,
     /// `success` | `running` | `failed`
     pub status: String,
     pub version: Option<String>,

@@ -264,6 +264,7 @@ Errors are returned as RFC 9457 `application/problem+json` carrying a stable \
         wf_jira::JiraIssueSummary,
         wf_jira::JiraComment,
         wf_jira::JiraTransition,
+        wf_jira::JiraTransitionTo,
         wf_jira::JiraProject,
         wf_jira::JiraIssueDetail,
         wf_jira::JiraIssuePage,

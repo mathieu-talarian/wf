@@ -113,10 +113,10 @@ pub async fn get_dashboard(
     user_id: Uuid,
     tab: GithubQueueKey,
 ) -> Result<GithubDashboard, AppError> {
-    if let Some(hit) = state.dashboard_cache.peek(user_id, tab) {
-        if hit.fresh {
-            return Ok(hit.value);
-        }
+    if let Some(hit) = state.dashboard_cache.peek(user_id, tab)
+        && hit.fresh
+    {
+        return Ok(hit.value);
     }
     let Some(row) = gh::select_row(&state.db, user_id).await? else {
         return Ok(GithubDashboard::empty());

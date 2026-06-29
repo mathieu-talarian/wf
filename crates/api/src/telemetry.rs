@@ -47,20 +47,20 @@ pub struct TelemetryGuard {
 impl TelemetryGuard {
     /// Flush and stop the exporters. Safe to call exactly once on shutdown.
     pub fn shutdown(self) {
-        if let Some(provider) = self.tracer_provider {
-            if let Err(err) = provider.shutdown() {
-                eprintln!("error shutting down tracer provider: {err}");
-            }
+        if let Some(provider) = self.tracer_provider
+            && let Err(err) = provider.shutdown()
+        {
+            eprintln!("error shutting down tracer provider: {err}");
         }
-        if let Some(provider) = self.meter_provider {
-            if let Err(err) = provider.shutdown() {
-                eprintln!("error shutting down meter provider: {err}");
-            }
+        if let Some(provider) = self.meter_provider
+            && let Err(err) = provider.shutdown()
+        {
+            eprintln!("error shutting down meter provider: {err}");
         }
-        if let Some(provider) = self.logger_provider {
-            if let Err(err) = provider.shutdown() {
-                eprintln!("error shutting down logger provider: {err}");
-            }
+        if let Some(provider) = self.logger_provider
+            && let Err(err) = provider.shutdown()
+        {
+            eprintln!("error shutting down logger provider: {err}");
         }
     }
 }

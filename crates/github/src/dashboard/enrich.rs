@@ -377,10 +377,10 @@ fn approval_state(reviews: &[ApiReview], reviewer_count: usize) -> GithubApprova
     const DECISIVE: [&str; 3] = ["APPROVED", "CHANGES_REQUESTED", "DISMISSED"];
     let mut latest: HashMap<&str, &str> = HashMap::new();
     for review in reviews {
-        if let Some(user) = &review.user {
-            if DECISIVE.contains(&review.state.as_str()) {
-                latest.insert(user.login.as_str(), review.state.as_str());
-            }
+        if let Some(user) = &review.user
+            && DECISIVE.contains(&review.state.as_str())
+        {
+            latest.insert(user.login.as_str(), review.state.as_str());
         }
     }
     let states: HashSet<&str> = latest.values().copied().collect();

@@ -18,6 +18,13 @@ use wf_jira::{
     JiraWriteError,
 };
 
+tokio::task_local! {
+    /// Request target ("/api/..."), set by `RequestTracing` around every request.
+    /// `error_response`/`problem` read it so the RFC 9457 `instance` is always
+    /// populated even when the handler never called `.at()`.
+    pub static REQUEST_INSTANCE: String;
+}
+
 #[derive(Debug, thiserror::Error)]
 enum ErrorKind {
     #[error("unauthorized: {0}")]
@@ -296,10 +303,18 @@ impl AppError {
         self
     }
 
+    /// The explicit `.at()` instance, falling back to the middleware task-local
+    /// request target so it's populated for every endpoint.
+    fn instance(&self) -> Option<String> {
+        self.instance
+            .clone()
+            .or_else(|| REQUEST_INSTANCE.try_with(Clone::clone).ok())
+    }
+
     pub fn problem(&self) -> ProblemDetails {
         let parts = self.kind.parts();
         ProblemDetails::new(parts.status, parts.slug, parts.title, parts.detail)
-            .with_instance(self.instance.clone())
+            .with_instance(self.instance())
             .with_reason(self.reason.clone().or(parts.reason))
     }
 }
@@ -375,11 +390,25 @@ impl ResponseError for AppError {
 
     fn error_response(&self) -> HttpResponse {
         let problem = self.problem();
-        // Keep the TS logging split: >=500 at error (with cause), 4xx at warn.
+        let instance = problem.instance.as_deref().unwrap_or("-");
+        let reason = problem.reason.as_deref().unwrap_or("-");
+        // >=500 at error with the full source chain ({:#} walks anyhow/thiserror
+        // sources); 4xx at warn. Both carry endpoint + slug + reason so any
+        // failure is diagnosable from one log line.
         if problem.status >= 500 {
-            tracing::error!(target: "http.error", status = problem.status, cause = %self.kind, "request failed");
+            tracing::error!(
+                target: "http.error",
+                status = problem.status, error_type = problem.type_uri.as_str(), instance, reason,
+                detail = %problem.detail, cause = format!("{:#}", self.kind),
+                "request failed",
+            );
         } else {
-            tracing::warn!(target: "http.error", status = problem.status, detail = %problem.detail, "request failed");
+            tracing::warn!(
+                target: "http.error",
+                status = problem.status, error_type = problem.type_uri.as_str(), instance, reason,
+                detail = %problem.detail, cause = %self.kind,
+                "request failed",
+            );
         }
         HttpResponse::build(self.status_code())
             .content_type("application/problem+json")

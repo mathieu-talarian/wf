@@ -19,7 +19,7 @@ spec:
         # Make the collector config + the two app secrets available to the
         # revision. Each entry is "alias:projects/PROJECT/secrets/SECRET"; the
         # alias is what secretKeyRef.name / volumes.secret.secretName reference.
-        run.googleapis.com/secrets: "__COLLECTOR_CONFIG_SECRET__:projects/__PROJECT_ID__/secrets/__COLLECTOR_CONFIG_SECRET__,wf-database-url:projects/__PROJECT_ID__/secrets/wf-database-url,wf-github-token-encryption-key:projects/__PROJECT_ID__/secrets/wf-github-token-encryption-key"
+        run.googleapis.com/secrets: "__COLLECTOR_CONFIG_SECRET__:projects/__PROJECT_ID__/secrets/__COLLECTOR_CONFIG_SECRET__,wf-database-url:projects/__PROJECT_ID__/secrets/wf-database-url,wf-github-token-encryption-key:projects/__PROJECT_ID__/secrets/wf-github-token-encryption-key,wf-openai-api-key:projects/__PROJECT_ID__/secrets/wf-openai-api-key"
     spec:
       containers:
         - image: __APP_IMAGE__
@@ -27,9 +27,7 @@ spec:
           ports:
             - containerPort: 8080
           env:
-            # Bind to the Cloud Run port (overrides the app default of 3000).
-            - name: PORT
-              value: "8080"
+            # PORT is injected by Cloud Run (matches containerPort 8080) — reserved, must not be set here.
             - name: NODE_ENV
               value: production
             # --- OpenTelemetry: export all signals to the sidecar collector. ---
@@ -60,6 +58,12 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: wf-github-token-encryption-key
+                  key: latest
+            # OPENAI_API_KEY powers the AI assists; absent → /ai/* endpoints no-op.
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: wf-openai-api-key
                   key: latest
           resources:
             limits:
