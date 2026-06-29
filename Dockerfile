@@ -65,12 +65,12 @@ COPY --from=planner /app/recipe.json recipe.json
 # registry cache (cloudbuild.yaml) and sccache+GCS, which compose without overlap.
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
-    with-sccache cargo chef cook --release --recipe-path recipe.json
+    with-sccache cargo chef cook --release --locked --package wf-api --bin wf-api --recipe-path recipe.json
 # Build application (the `wf-api` binary from the workspace).
 COPY . .
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
-    with-sccache cargo build --release --bin wf-api
+    with-sccache cargo build --release --locked --package wf-api --bin wf-api
 
 # We do not need the Rust toolchain to run the binary!
 FROM debian:trixie-slim AS runtime

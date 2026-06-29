@@ -17,6 +17,12 @@ substitutions:
 
 options:
   substitutionOption: ALLOW_LOOSE
+  # Rust release builds are CPU-bound and highly parallel: more vCPUs ≈ linear
+  # speedup on the compile/codegen phase (the dominant cost here). E2_HIGHCPU_32
+  # is 16x the default e2-standard-2; faster wall time often costs LESS overall.
+  # diskSizeGb raised because target/ alone is ~15G (default 100G is the free tier).
+  machineType: 'E2_HIGHCPU_32'
+  diskSizeGb: 200
 
 steps:
   - id: build-push-app-image
@@ -44,8 +50,12 @@ steps:
         # (not the IP). mode=max caches intermediate stages too (the cargo-chef
         # cook layer); image-manifest keeps the cache AR-compatible.
         # --provenance=false keeps a single-manifest image for Cloud Run.
+        # --progress=plain forces full, non-collapsed BuildKit logs so the build
+        # log shows per-layer cache hits/misses, cache export time, and the cargo
+        # cook vs final-compile durations — needed to diagnose what's slow.
         docker buildx build \
           --builder builder \
+          --progress=plain \
           --build-arg "SCCACHE_GCS_BUCKET=${_SCCACHE_BUCKET}" \
           --add-host metadata.google.internal:169.254.169.254 \
           --cache-from "type=registry,ref=$${CACHE_IMAGE}" \

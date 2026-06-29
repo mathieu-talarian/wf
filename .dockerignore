@@ -1,5 +1,12 @@
-.serena
+# Keep aligned with .gcloudignore so local `docker build` and Cloud Build see the
+# same context — anything left in here that changes busts the `COPY . .` cache
+# layers (cargo cook + final compile) for no reason.
 .git
+.gcloudignore
+.serena
+.claude
+.codex
+.idea
 target
 bin
 tmp
@@ -8,4 +15,11 @@ cloudbuild.yaml
 otel-config.yaml
 service.yaml
 deploy
+backend
+docs
+scripts
+graphify-out
+clippy.toml
+justfile
+**.md
 *.test
