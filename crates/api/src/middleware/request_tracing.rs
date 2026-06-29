@@ -133,7 +133,12 @@ where
             metrics.active.add(1, &active_attrs);
 
             let start = Instant::now();
-            let outcome = service.call(req).instrument(span).await;
+            // Scope the request target so `AppError` can populate the RFC 9457
+            // `instance` for every endpoint, even handlers that never call `.at()`.
+            // error_response runs downstream (in HandlerService), so it's in scope.
+            let outcome = crate::error::REQUEST_INSTANCE
+                .scope(fallback_route.clone(), service.call(req).instrument(span))
+                .await;
             let elapsed = start.elapsed().as_secs_f64();
 
             metrics.active.add(-1, &active_attrs);
