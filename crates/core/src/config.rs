@@ -62,6 +62,10 @@ pub struct Config {
     pub tick_batch_size: u64,
     pub tick_budget_ms: u64,
     pub tick_lease_secs: u64,
+    /// Max scopes polled concurrently within one tick (`TICK_CONCURRENCY`).
+    /// Each in-flight scope briefly borrows a DB connection, so keep this well
+    /// under the pool size (10) to leave headroom for request handlers.
+    pub tick_concurrency: u64,
     /// Interval of the in-process tick scheduler (`TICK_SCHEDULER_SECS`).
     pub tick_scheduler_secs: u64,
     /// OpenAI API key for the AI assists (`OPENAI_API_KEY`); AI endpoints
@@ -105,6 +109,7 @@ impl Config {
             tick_batch_size: parse_u64(map, "TICK_BATCH_SIZE", 50)?,
             tick_budget_ms: parse_u64(map, "TICK_BUDGET_MS", 30_000)?,
             tick_lease_secs: parse_u64(map, "TICK_LEASE_SECS", 90)?,
+            tick_concurrency: parse_u64(map, "TICK_CONCURRENCY", 4)?,
             tick_scheduler_secs: parse_u64(map, "TICK_SCHEDULER_SECS", 120)?,
             openai_api_key: present(map, "OPENAI_API_KEY"),
         })

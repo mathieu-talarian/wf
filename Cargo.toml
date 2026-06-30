@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/core", "crates/db", "crates/github", "crates/jira", "crates/slack", "crates/api", "crates/migration", "crates/sync"]
+members = ["crates/core", "crates/db", "crates/http", "crates/github", "crates/jira", "crates/slack", "crates/api", "crates/migration", "crates/sync"]
 
 [workspace.package]
 version = "0.1.0"
@@ -17,6 +17,7 @@ too_many_lines = "warn"
 # Internal crates
 wf-core = { path = "crates/core" }
 wf-db = { path = "crates/db" }
+wf-http = { path = "crates/http" }
 wf-github = { path = "crates/github" }
 wf-jira = { path = "crates/jira" }
 wf-slack = { path = "crates/slack" }
@@ -50,6 +51,10 @@ sea-orm = { version = "2.0.0-rc.41", default-features = false, features = [
 
 # HTTP client + JWT (auth)
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls", "query"] }
+# Shared outbound HTTP middleware: one pooled client + OTLP client spans
+# (reqwest-tracing `opentelemetry_0_32` aligns with opentelemetry 0.32 below).
+reqwest-middleware = { version = "0.5", features = ["json", "query"] }
+reqwest-tracing = { version = "0.7", features = ["opentelemetry_0_32"] }
 jsonwebtoken = { version = "10", features = ["aws_lc_rs"] }
 
 # Async combinators (bounded-concurrency enrichment) + URL path encoding

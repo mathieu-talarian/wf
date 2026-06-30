@@ -14,6 +14,7 @@ workspace = true
 [dependencies]
 wf-core = { workspace = true }
 wf-db = { workspace = true }
+wf-http = { workspace = true }
 wf-github = { workspace = true }
 wf-jira = { workspace = true }
 wf-slack = { workspace = true }

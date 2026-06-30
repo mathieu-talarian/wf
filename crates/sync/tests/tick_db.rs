@@ -33,6 +33,7 @@ fn make_opts(owner: &str, uri: &str) -> TickOptions {
         budget: Duration::from_secs(20),
         lease_secs: 60,
         poll_interval_secs: 0, // immediately due again
+        concurrency: 4, // exercise the concurrent path; per-scope counts are order-invariant
         owner: owner.to_string(),
         github_base: Some(uri.to_string()),
     }

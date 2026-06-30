@@ -114,7 +114,7 @@ pub async fn list_pulls_page(
 /// Sends a poller request, mapping transport / non-2xx / parse failures to
 /// `GithubError::Api`.
 async fn send_json<T: serde::de::DeserializeOwned>(
-    req: reqwest::RequestBuilder,
+    req: reqwest_middleware::RequestBuilder,
 ) -> Result<T, GithubError> {
     let resp = send_get_retry(req).await.map_err(|e| GithubError::Api(e.to_string()))?;
     let status = resp.status();
@@ -140,7 +140,7 @@ fn retry_delay(resp: Option<&reqwest::Response>) -> std::time::Duration {
 
 /// One retry for a poller GET (all idempotent) on transport errors or transient
 /// statuses. ponytail: 1 retry, 15s cap — past that the scope backoff takes over.
-async fn send_get_retry(req: reqwest::RequestBuilder) -> reqwest::Result<reqwest::Response> {
+async fn send_get_retry(req: reqwest_middleware::RequestBuilder) -> reqwest_middleware::Result<reqwest::Response> {
     let retry = req.try_clone();
     let resp = req.send().await;
     let needs_retry = resp.as_ref().map(|r| is_transient(r.status().as_u16())).unwrap_or(true);

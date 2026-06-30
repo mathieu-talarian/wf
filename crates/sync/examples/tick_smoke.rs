@@ -17,6 +17,7 @@ async fn main() -> anyhow::Result<()> {
         budget: Duration::from_millis(cfg.tick_budget_ms),
         lease_secs: cfg.tick_lease_secs,
         poll_interval_secs: cfg.poll_interval_secs,
+        concurrency: cfg.tick_concurrency as usize,
         owner: "tick_smoke".to_string(),
         github_base: None,
     };

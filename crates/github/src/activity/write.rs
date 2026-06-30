@@ -3,7 +3,8 @@
 //! `GithubError::Write { status, message }` with the status passed through so
 //! the route layer can surface 403/404/422 rather than a generic 502.
 
-use reqwest::{RequestBuilder, Response};
+use reqwest::Response;
+use reqwest_middleware::RequestBuilder;
 
 use crate::errors::GithubError;
 

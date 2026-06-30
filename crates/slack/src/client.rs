@@ -4,7 +4,8 @@
 
 use std::time::Duration;
 
-use reqwest::{RequestBuilder, Response};
+use reqwest::Response;
+use reqwest_middleware::RequestBuilder;
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde_json::json;
@@ -15,8 +16,6 @@ use crate::types::{
 };
 
 const DEFAULT_BASE: &str = "https://slack.com/api";
-const HTTP_TIMEOUT: Duration = Duration::from_secs(15);
-const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Transient statuses worth one retry (rate-limit / upstream blip).
 fn is_transient(status: u16) -> bool {
@@ -34,7 +33,7 @@ fn retry_delay(resp: Option<&Response>) -> Duration {
 
 /// One retry for idempotent GETs on transport errors or transient statuses;
 /// honors `Retry-After`. ponytail: 1 retry, 15s cap — then the scope backoff wins.
-async fn send_once_retry(req: RequestBuilder, retryable: bool) -> reqwest::Result<Response> {
+async fn send_once_retry(req: RequestBuilder, retryable: bool) -> reqwest_middleware::Result<Response> {
     let retry = if retryable { req.try_clone() } else { None };
     let resp = req.send().await;
     let needs_retry = resp.as_ref().map(|r| is_transient(r.status().as_u16())).unwrap_or(true);
@@ -48,7 +47,7 @@ async fn send_once_retry(req: RequestBuilder, retryable: bool) -> reqwest::Resul
 }
 
 pub struct SlackClient {
-    http: reqwest::Client,
+    http: wf_http::HttpClient,
     token: String,
     base: String,
 }
@@ -76,12 +75,7 @@ impl SlackClient {
     }
 
     pub fn with_base(token: &str, base: &str) -> Self {
-        let http = reqwest::Client::builder()
-            .timeout(HTTP_TIMEOUT)
-            .connect_timeout(CONNECT_TIMEOUT)
-            .build()
-            .expect("reqwest client builds");
-        Self { http, token: token.to_string(), base: base.trim_end_matches('/').to_string() }
+        Self { http: wf_http::shared(), token: token.to_string(), base: base.trim_end_matches('/').to_string() }
     }
 
     /// One GET/POST round-trip, envelope unwrapped; returns the payload JSON

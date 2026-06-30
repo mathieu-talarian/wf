@@ -4,7 +4,9 @@
 
 use std::time::{Duration, Instant};
 
+use futures::stream::{self, StreamExt};
 use sea_orm::prelude::Uuid;
+use tracing::Instrument;
 use sea_orm::DbErr;
 use serde::Serialize;
 use wf_core::{Sealed, TokenCipher};
@@ -25,6 +27,9 @@ pub struct TickOptions {
     pub budget: Duration,
     pub lease_secs: u64,
     pub poll_interval_secs: u64,
+    /// Max scopes polled concurrently (bounded so in-flight scopes can't
+    /// exhaust the DB pool). `0`/`1` keep the old serial behavior.
+    pub concurrency: usize,
     /// Identifies this tick run in `lease_owner`.
     pub owner: String,
     /// Test seam: override the GitHub REST base (wiremock).
@@ -51,41 +56,78 @@ pub enum TickError {
 pub async fn run_tick(db: &Db, cipher: &TokenCipher, opts: &TickOptions) -> Result<TickSummary, TickError> {
     reconcile_all(db).await?;
     let claimed = sync_state::claim_due(db, opts.batch, &opts.owner, opts.lease_secs).await?;
-    let started = Instant::now();
-    let mut summary = TickSummary { scopes_claimed: claimed.len(), ..TickSummary::default() };
-    for scope in &claimed {
-        if started.elapsed() >= opts.budget {
-            break; // unprocessed leases expire and are re-claimable (spec §8)
+    let claimed_count = claimed.len();
+    let deadline = Instant::now() + opts.budget;
+    // Independent scopes (SKIP LOCKED isolates them) poll concurrently, bounded so
+    // in-flight scopes can't exhaust the DB pool. Past the budget new scopes skip —
+    // their leases expire and are re-claimed next tick (spec §8).
+    let deltas: Vec<Result<Option<StepDelta>, TickError>> = stream::iter(claimed)
+        .map(|scope| poll_one(db, cipher, scope, opts, deadline))
+        .buffer_unordered(opts.concurrency.max(1))
+        .collect()
+        .await;
+    let mut summary = TickSummary { scopes_claimed: claimed_count, ..TickSummary::default() };
+    for delta in deltas {
+        if let Some(d) = delta? {
+            summary.apply(d);
         }
-        step_scope(db, cipher, scope, opts, &mut summary).await?;
     }
     Ok(summary)
 }
 
-/// Polls one claimed scope and records the outcome on `sync_state`.
+/// Runs `step_scope` unless the tick budget is already spent (then the scope is
+/// skipped: its lease expires and it's re-claimed next tick). Owned `scope` keeps
+/// the concurrent futures free of borrows from the claimed batch.
+async fn poll_one(
+    db: &Db,
+    cipher: &TokenCipher,
+    scope: sync_state::Model,
+    opts: &TickOptions,
+    deadline: Instant,
+) -> Result<Option<StepDelta>, TickError> {
+    if Instant::now() >= deadline {
+        return Ok(None);
+    }
+    let span = tracing::info_span!("tick.scope", source = %scope.source, scope = %scope.scope_key);
+    step_scope(db, cipher, &scope, opts).instrument(span).await.map(Some)
+}
+
+/// Polls one claimed scope, records the outcome on `sync_state`, and returns the
+/// per-scope delta. Kept pure (no `&mut summary`) so scopes run concurrently.
 async fn step_scope(
     db: &Db,
     cipher: &TokenCipher,
     scope: &sync_state::Model,
     opts: &TickOptions,
-    summary: &mut TickSummary,
-) -> Result<(), TickError> {
+) -> Result<StepDelta, TickError> {
     match process_scope(db, cipher, scope, opts).await {
         Ok(ScopeOutcome { written, new_cursor }) => {
             let cursor = new_cursor.or_else(|| scope.cursor.clone());
             sync_state::complete_ok(db, scope, &opts.owner, cursor, opts.poll_interval_secs).await?;
-            summary.scopes_ok += 1;
-            summary.events_written += written;
+            Ok(StepDelta { ok: true, written })
         }
-        Err(ScopeError::Db(e)) => return Err(e.into()),
+        Err(ScopeError::Db(e)) => Err(e.into()),
         Err(ScopeError::Poll(msg)) => {
             let backoff = backoff_secs(opts.poll_interval_secs, scope.consecutive_errors);
             tracing::warn!(scope = %scope.scope_key, kind = %scope.entity_kind, error = %msg, "scope poll failed");
             sync_state::complete_err(db, scope, &opts.owner, &msg, backoff).await?;
-            summary.scopes_failed += 1;
+            Ok(StepDelta { ok: false, written: 0 })
         }
     }
-    Ok(())
+}
+
+/// Per-scope outcome folded into `TickSummary` after the concurrent poll.
+struct StepDelta {
+    ok: bool,
+    written: u64,
+}
+
+impl TickSummary {
+    fn apply(&mut self, d: StepDelta) {
+        self.scopes_ok += usize::from(d.ok);
+        self.scopes_failed += usize::from(!d.ok);
+        self.events_written += d.written;
+    }
 }
 
 struct ScopeOutcome {

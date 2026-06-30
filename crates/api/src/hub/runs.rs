@@ -5,6 +5,7 @@ use std::collections::HashMap;
 
 use futures::stream::{self, StreamExt};
 use sea_orm::prelude::Uuid;
+use tracing::Instrument;
 use wf_db::tables::github_pat_connections as gh;
 use wf_github::{GithubClient, PolledWorkflowRun, list_runs_any_status};
 
@@ -54,12 +55,15 @@ fn spawn_refresh(state: &AppState, user_id: Uuid) {
     let Ok(guard) = lock.try_lock_owned() else { return };
     let state = state.clone();
     // actix's runtime spawn (no `Send` bound) — consistent with board's refresh.
-    actix_web::rt::spawn(async move {
-        let _guard = guard;
-        if let Ok(result) = compute_runs(&state, user_id).await {
-            cache::put_runs(user_id, &result);
+    actix_web::rt::spawn(
+        async move {
+            let _guard = guard;
+            if let Ok(result) = compute_runs(&state, user_id).await {
+                cache::put_runs(user_id, &result);
+            }
         }
-    });
+        .instrument(tracing::info_span!("hub.refresh", kind = "runs", user_id = %user_id)),
+    );
 }
 
 /// The live fetch+assemble (GitHub). Kept on the live path on purpose: the

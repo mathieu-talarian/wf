@@ -7,13 +7,11 @@ use std::time::Duration;
 
 use base64::Engine;
 use reqwest::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE};
-use reqwest::{Method, RequestBuilder, Response};
+use reqwest::{Method, Response};
+use reqwest_middleware::RequestBuilder;
 use serde::de::DeserializeOwned;
 
 use crate::errors::JiraApiError;
-
-const HTTP_TIMEOUT: Duration = Duration::from_secs(15);
-const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Transient statuses worth one retry (rate-limit / upstream blip).
 fn is_transient(status: u16) -> bool {
@@ -31,7 +29,7 @@ fn retry_delay(resp: Option<&Response>) -> Duration {
 
 /// One retry for idempotent GETs on transport errors or transient statuses;
 /// honors `Retry-After`. ponytail: 1 retry, 15s cap — then the scope backoff wins.
-async fn send_once_retry(req: RequestBuilder, retryable: bool) -> reqwest::Result<Response> {
+async fn send_once_retry(req: RequestBuilder, retryable: bool) -> reqwest_middleware::Result<Response> {
     let retry = if retryable { req.try_clone() } else { None };
     let resp = req.send().await;
     let needs_retry = resp.as_ref().map(|r| is_transient(r.status().as_u16())).unwrap_or(true);
@@ -52,7 +50,7 @@ pub struct JiraCreds {
 }
 
 pub struct JiraClient {
-    http: reqwest::Client,
+    http: wf_http::HttpClient,
     site_url: String,
     auth_header: String,
 }
@@ -79,13 +77,7 @@ async fn to_api_error(status: u16, resp: Response) -> JiraApiError {
 
 impl JiraClient {
     pub fn new(creds: &JiraCreds) -> Self {
-        let http = reqwest::Client::builder()
-            .redirect(reqwest::redirect::Policy::none())
-            .timeout(HTTP_TIMEOUT)
-            .connect_timeout(CONNECT_TIMEOUT)
-            .build()
-            .expect("reqwest client builds");
-        Self { http, site_url: creds.site_url.clone(), auth_header: auth_header(creds) }
+        Self { http: wf_http::shared_no_redirect(), site_url: creds.site_url.clone(), auth_header: auth_header(creds) }
     }
 
     pub fn site_url(&self) -> &str {

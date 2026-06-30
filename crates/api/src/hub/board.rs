@@ -7,6 +7,7 @@ use std::collections::{HashMap, HashSet};
 
 use futures::stream::{self, StreamExt};
 use sea_orm::prelude::Uuid;
+use tracing::Instrument;
 use wf_db::tables::{
     github_pat_connections, jira_pat_connections, notes, reminders, slack_messages, ticket_links,
 };
@@ -92,12 +93,15 @@ fn spawn_refresh(state: &AppState, user_id: Uuid) {
     let state = state.clone();
     // actix's runtime spawn (no `Send` bound): the board's enrich path is !Send,
     // and actix workers are current-thread, so this stays on the worker arbiter.
-    actix_web::rt::spawn(async move {
-        let _guard = guard;
-        if let Ok(board) = compute_board(&state, user_id).await {
-            cache::put_board(user_id, &board);
+    actix_web::rt::spawn(
+        async move {
+            let _guard = guard;
+            if let Ok(board) = compute_board(&state, user_id).await {
+                cache::put_board(user_id, &board);
+            }
         }
-    });
+        .instrument(tracing::info_span!("hub.refresh", kind = "board", user_id = %user_id)),
+    );
 }
 
 async fn compute_board(state: &AppState, user_id: Uuid) -> Result<HubBoard, AppError> {

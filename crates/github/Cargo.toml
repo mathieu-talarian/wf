@@ -8,7 +8,9 @@ license.workspace = true
 workspace = true
 
 [dependencies]
+wf-http = { workspace = true }
 reqwest = { workspace = true }
+reqwest-middleware = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

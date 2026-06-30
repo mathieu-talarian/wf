@@ -35,7 +35,7 @@ pub struct JwksVerifier {
     jwks_url: String,
     issuer: String,
     audience: String,
-    http: reqwest::Client,
+    http: wf_http::HttpClient,
     cache: RwLock<Option<CachedJwks>>,
 }
 
@@ -55,11 +55,9 @@ impl JwksVerifier {
             jwks_url: format!("{base}/auth/v1/.well-known/jwks.json"),
             issuer: format!("{base}/auth/v1"),
             audience: audience.to_string(),
-            http: reqwest::Client::builder()
-                .timeout(Duration::from_secs(10))
-                .connect_timeout(Duration::from_secs(5))
-                .build()
-                .expect("reqwest client builds"),
+            // Shared pooled + OTLP-traced transport (wf-http). JWKS fetches are
+            // rare and cached, so the default 15s ceiling is fine here.
+            http: wf_http::shared(),
             cache: RwLock::new(None),
         }
     }

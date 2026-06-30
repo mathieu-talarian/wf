@@ -20,6 +20,7 @@ fn tick_options(state: &AppState) -> TickOptions {
         budget: Duration::from_millis(state.config.tick_budget_ms),
         lease_secs: state.config.tick_lease_secs,
         poll_interval_secs: state.config.poll_interval_secs,
+        concurrency: state.config.tick_concurrency as usize,
         owner: format!("api-sched-{}", uuid::Uuid::new_v4()),
         github_base: None,
     }

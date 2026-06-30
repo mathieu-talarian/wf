@@ -2,18 +2,14 @@
 //! One HTTP style for all GitHub calls: Bearer auth, the standard GitHub
 //! headers, and a thin error classifier for token validation.
 
-use std::time::Duration;
-
 use reqwest::header::{ACCEPT, AUTHORIZATION, USER_AGENT};
-use reqwest::{Method, RequestBuilder, Response, StatusCode};
+use reqwest::{Method, Response, StatusCode};
+use reqwest_middleware::RequestBuilder;
 
 use crate::errors::PatValidationError;
 use crate::types::PatValidationStatus;
 
 pub const REST_BASE: &str = "https://api.github.com";
-/// Overall + connect ceilings so a hung GitHub connection can't stall a tick.
-const HTTP_TIMEOUT: Duration = Duration::from_secs(15);
-const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const USER_AGENT_VALUE: &str = "workflow-server";
 const API_VERSION: &str = "2022-11-28";
 
@@ -37,7 +33,7 @@ pub fn parse_repo_ref(repository_url: &str) -> Option<RepoRef> {
 }
 
 pub struct GithubClient {
-    http: reqwest::Client,
+    http: wf_http::HttpClient,
     token: String,
     base: String,
 }
@@ -49,12 +45,7 @@ impl GithubClient {
 
     /// Test seam: point REST calls at a mock server (A1 §9).
     pub fn with_base(token: impl Into<String>, base: impl Into<String>) -> Self {
-        let http = reqwest::Client::builder()
-            .timeout(HTTP_TIMEOUT)
-            .connect_timeout(CONNECT_TIMEOUT)
-            .build()
-            .expect("reqwest client builds");
-        Self { http, token: token.into(), base: base.into() }
+        Self { http: wf_http::shared(), token: token.into(), base: base.into() }
     }
 
     pub fn token(&self) -> &str {
