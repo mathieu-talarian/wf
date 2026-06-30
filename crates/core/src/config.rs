@@ -185,7 +185,7 @@ fn parse_log_level(map: &HashMap<String, String>) -> Result<LogLevel, ConfigErro
             "error" => Ok(LogLevel::Error),
             "fatal" => Ok(LogLevel::Fatal),
             other => Err(ConfigError::Invalid(format!(
-                "LOG_LEVEL must be one of trace|debug|info|warning|error|fatal, got {other:?}"
+                "[LOG_LEVEL] must be one of trace|debug|info|warning|error|fatal, got {other:?}"
             ))),
         },
     }

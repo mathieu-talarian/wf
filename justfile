@@ -93,12 +93,12 @@ secrets-push:
     done
 
 # Build + deploy: push secrets, then submit Cloud Build with non-secret config from .env
-deploy: secrets-push
+deploy:
     @for v in SUPABASE_URL CORS_ORIGINS WEB_APP_URL; do \
         eval val=\$$v; \
         if [ -z "$val" ]; then echo "ERROR: $v missing in .env" >&2; exit 1; fi; \
     done; \
-    gcloud builds submit --project="{{project_id}}" --config=cloudbuild.yaml \
+    gcloud builds submit --project="{{project_id}}" --config=cloudbuild.yaml --region=europe-west1  \
         --substitutions="^@^_SUPABASE_URL=${SUPABASE_URL}@_SUPABASE_JWT_AUDIENCE=${SUPABASE_JWT_AUDIENCE:-authenticated}@_CORS_ORIGINS=${CORS_ORIGINS}@_WEB_APP_URL=${WEB_APP_URL}"
 
 # Check which secrets exist on GCP + which env vars the live service has
