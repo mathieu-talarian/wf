@@ -110,28 +110,39 @@ async fn compute_board(state: &AppState, user_id: Uuid) -> Result<HubBoard, AppE
 // ---- Inputs --------------------------------------------------------------
 
 async fn gather_inputs(state: &AppState, user_id: Uuid) -> Result<BoardInputs, AppError> {
-    let pat = require_pat(state, user_id).await?;
-    let repos: Vec<String> = pat.selected_repos.iter().take(MAX_REPOS).cloned().collect();
-    let mapping = load_board_mapping(state, user_id).await?;
-    let projects = selected_projects(state, user_id).await?;
+    // Wave 1 (cheap DB): the token/repos and project list gate the heavy fetches.
+    let (pat, projects, mapping) = tokio::join!(
+        require_pat(state, user_id),
+        selected_projects(state, user_id),
+        load_board_mapping(state, user_id),
+    );
+    let (pat, projects, mapping) = (pat?, projects?, mapping?);
     if projects.is_empty() {
         return Err(AppError::validation("No Jira projects selected."));
     }
-    let issues = fetch_issues(state, user_id, &projects).await?;
-    let pulls = fetch_pulls(&pat.token, &repos).await;
-    let branch_prompts = fetch_branch_prompts(&pat.token, &pat.login, &repos).await;
-    let workflow_repos = fetch_workflows(&pat.token, &repos).await;
-    let badges = fetch_badges(state, user_id).await?;
+    fetch_remote_inputs(state, user_id, pat, projects, mapping).await
+}
+
+/// Wave 2: the Jira search, three GitHub fan-outs, and the badge reads are all
+/// independent — fired at once instead of in series (the old cold-board hot spot).
+async fn fetch_remote_inputs(
+    state: &AppState,
+    user_id: Uuid,
+    pat: CachedPat,
+    projects: Vec<String>,
+    mapping: JiraBoardMapping,
+) -> Result<BoardInputs, AppError> {
+    let repos: Vec<String> = pat.selected_repos.iter().take(MAX_REPOS).cloned().collect();
+    let (issues, pulls, branch_prompts, workflow_repos, badges) = tokio::join!(
+        fetch_issues(state, user_id, &projects),
+        fetch_pulls(&pat.token, &repos),
+        fetch_branch_prompts(&pat.token, &pat.login, &repos),
+        fetch_workflows(&pat.token, &repos),
+        fetch_badges(state, user_id),
+    );
     Ok(BoardInputs {
-        pat,
-        repos,
-        mapping,
-        projects,
-        issues,
-        pulls,
-        branch_prompts,
-        workflow_repos,
-        badges,
+        pat, repos, mapping, projects,
+        issues: issues?, pulls, branch_prompts, workflow_repos, badges: badges?,
     })
 }
 

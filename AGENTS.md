@@ -1,25 +1,179 @@
 # Workflow backend
 
-## Tools must use
+# AGENTS.md
+
+## Load canary and user address
+
+- If this file is loaded at session start, begin your first response with exactly:
+  `AGENTS.md loaded — hello Mr. Twinkle.`
+- Address the user as `Mr. Twinkle` in the first sentence of every substantive response.
+
+## Required tool contract
+
+The required tools are:
+
+- Graphify
 - Serena
-- Sequential thinking
-- context7
-- graphify
+- Sequential Thinking
+- Context7
 
-### graphify
+Use all four tools on every non-trivial repository task: planning, debugging, architecture analysis, dependency/API work, refactors, multi-file edits, migrations, or unfamiliar code.
 
-This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
+For trivial single-file or text-only tasks, still check whether the required tools are available and use the relevant tool or tools. Do not fake a tool call.
 
-When the user types `/graphify`, invoke the `skill` tool with `skill: "graphify"` before doing anything else.
+If any required tool is unavailable, disconnected, denied, or failing, stop before editing and report:
 
-Rules:
-- For codebase questions, first run `graphify query "<question>"` when graphify-out/graph.json exists. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
-- Dirty graphify-out/ files are expected after hooks or incremental updates; dirty graph files are not a reason to skip graphify. Only skip graphify if the task is about stale or incorrect graph output, or the user explicitly says not to use it.
-- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
-- Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
-- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
+1. which tool is missing or failing,
+2. what it would have been used for,
+3. the exact setup, permission, or approval needed,
+4. whether Mr. Twinkle wants to continue without that tool.
 
+Never claim a tool was used unless it was actually called through MCP, a native client integration, slash command, or CLI command.
 
+Prefer MCP/native tool calls over shell fallbacks. Use shell commands only when the tool is installed as a CLI/slash command and no MCP tool is available.
+
+## Default task flow
+
+### 1. Plan with Sequential Thinking
+
+- Use Sequential Thinking at the beginning of every non-trivial task.
+- Use revision or branching when assumptions change.
+- Use a final verification step before the final answer.
+- Do not reveal private chain-of-thought. Share concise conclusions, decisions, and next actions instead.
+
+### 2. Load project context with Serena
+
+- Activate the current repository/project first.
+- Read Serena initial instructions.
+- If onboarding has not been done, run onboarding before deeper work.
+- Read relevant Serena memories before making changes.
+- Write a Serena memory after discovering stable project conventions, important architecture, or recurring commands.
+- Prefer Serena’s symbol-aware tools for code navigation and edits.
+
+Preferred Serena sequence:
+
+1. `activate_project` for the current repo.
+2. `initial_instructions`.
+3. `onboarding` if not already performed.
+4. `get_symbols_overview` before reading large source files.
+5. `find_symbol`, `find_referencing_symbols`, or `find_implementations` before modifying code.
+6. `get_diagnostics_for_file` or other diagnostics after edits.
+7. `write_memory` for stable, reusable project findings.
+
+Avoid repeated plain grep/read-file loops when Serena symbol tools can answer the question.
+
+### 3. Build or query architecture context with Graphify
+
+Use Graphify for:
+
+- unfamiliar repositories,
+- architecture questions,
+- cross-file or cross-domain relationships,
+- design rationale in docs, PDFs, diagrams, and other non-code artifacts,
+- identifying central modules, communities, and surprising connections.
+
+Before broad file search or architecture explanations, check whether a Graphify graph/report exists.
+
+If the graph is missing or stale, build or update Graphify before relying on it.
+
+Preferred Graphify commands when available:
+
+- `/graphify` or `graphify .` to build the graph for the current repo.
+- `/graphify <repo-path> --update` to refresh changed files.
+- `/graphify query "<question>"` to answer architecture or dependency-flow questions.
+- `/graphify path "<entity A>" "<entity B>"` to inspect relationships.
+- `/graphify explain "<entity>"` to explain a module, class, subsystem, or concept.
+- `graphify hook install` when Mr. Twinkle wants the graph kept fresh after commits and branch switches.
+- The built graph lives in `graphify-out/` at repo root — check there before rebuilding.
+
+Validate graph-derived conclusions against source files before editing.
+
+### 4. Ground external/library knowledge with Context7
+
+Use Context7 before writing or changing code that depends on:
+
+- external libraries,
+- APIs,
+- frameworks,
+- cloud SDKs,
+- build tools,
+- config formats,
+- test frameworks,
+- generated boilerplate,
+- migrations or deprecations.
+
+Preferred Context7 sequence:
+
+1. Identify the library/framework and version from the repo.
+2. Use `resolve-library-id` when the exact Context7 ID is unknown.
+3. Use `query-docs` with a focused query and the exact library ID.
+4. Prefer Context7 docs over model memory for APIs and configuration.
+5. Mention the library ID used when the answer depends on it.
+
+If Context7 has no relevant docs, say so and fall back to official docs or repository source.
+
+### 5. Implement with minimal, verified changes
+
+- Inspect existing conventions before editing.
+- Prefer small, targeted edits over broad rewrites.
+- Use Serena for symbol-aware edits and refactors where possible.
+- Use Graphify for cross-module impact checks.
+- Use Context7 before touching external API/library usage.
+- Run the narrowest relevant tests/checks first, then broader checks when risk warrants.
+- Report what changed, which required tools were used, and what verification passed or could not be run.
+
+## Tool-specific rules
+
+### Serena: semantic code operations
+
+Use Serena for project activation, onboarding, memories, symbol lookup, references, implementation discovery, diagnostics, safe refactors, targeted symbol-body edits, insertion near symbols, and renames.
+
+Do not modify a symbol-heavy source file until you have used Serena to inspect its symbol overview or locate the relevant symbol.
+
+### Graphify: repository knowledge graph
+
+Use Graphify before relying on raw search for architecture or cross-module questions.
+
+When Graphify and source files disagree, trust the source files and update the graph.
+
+Use Graphify outputs as navigation and hypothesis support, not as the sole source of truth for edits.
+
+### Context7: current external documentation
+
+Use Context7 for dependency-aware coding. Do not rely on model memory for external APIs when Context7 can provide version-specific documentation.
+
+When the repo pins a version, query docs for that version.
+
+### Sequential Thinking: structured reasoning
+
+Use Sequential Thinking to break work into steps, revise the plan when evidence changes, branch alternatives when needed, and verify the solution hypothesis before finalizing.
+
+Summarize outcomes, not hidden reasoning.
+
+## Client-specific notes
+
+### Codex
+
+- Codex should load this file as project guidance when it is named `AGENTS.md` in the repository root or another loaded instruction location.
+- MCP servers must still be configured in Codex. This file tells Codex how to use them, but does not install them.
+- In Codex, check active MCP servers with `/mcp` when available.
+- If Codex MCP config supports required servers, mark required MCP servers as required so startup fails instead of silently running without them.
+
+### Claude Code
+
+- `CLAUDE.md` is a **symlink to this file** (`AGENTS.md`) — editing either edits both. Claude Code loads it via that symlink.
+- MCP tools must be connected and permitted. If Claude can see a tool but lacks approval to call it, ask Mr. Twinkle to approve/allow the tool instead of silently continuing without it.
+- Use hooks for hard enforcement when behavior must happen at a lifecycle point, such as Graphify before broad search or Serena activation at session start.
+
+## Final response checklist
+
+Before responding:
+
+- Confirm whether each required tool was used or explain why it could not be used.
+- Summarize code changes and files touched.
+- Summarize verification/tests.
+- Call out risks, assumptions, and follow-up work.
+- Address Mr. Twinkle by name in the first sentence.
 ## Build & verify
 - Lint gate (CI): `cargo clippy --all --all-targets --locked -- -D warnings` — run this, not plain clippy.
 - clippy.toml sets `too-many-lines-threshold = 25` — every function ≤25 lines; decompose into helpers up front.
