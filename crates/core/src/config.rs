@@ -68,6 +68,9 @@ pub struct Config {
     pub tick_concurrency: u64,
     /// Interval of the in-process tick scheduler (`TICK_SCHEDULER_SECS`).
     pub tick_scheduler_secs: u64,
+    /// Max DB pool connections (`DB_MAX_CONNECTIONS`). Keep under Supabase's
+    /// pooler ceiling (15) to leave headroom — deployed 14, local 1.
+    pub db_max_connections: u64,
     /// OpenAI API key for the AI assists (`OPENAI_API_KEY`); AI endpoints
     /// return 503 when unset.
     pub openai_api_key: Option<String>,
@@ -111,6 +114,7 @@ impl Config {
             tick_lease_secs: parse_u64(map, "TICK_LEASE_SECS", 90)?,
             tick_concurrency: parse_u64(map, "TICK_CONCURRENCY", 4)?,
             tick_scheduler_secs: parse_u64(map, "TICK_SCHEDULER_SECS", 120)?,
+            db_max_connections: parse_u64(map, "DB_MAX_CONNECTIONS", 10)?,
             openai_api_key: present(map, "OPENAI_API_KEY"),
         })
     }

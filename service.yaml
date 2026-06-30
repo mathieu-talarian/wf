@@ -47,6 +47,9 @@ spec:
               value: "__CORS_ORIGINS__"
             - name: WEB_APP_URL
               value: "__WEB_APP_URL__"
+            # Cap under Supabase pooler ceiling (15) to leave headroom.
+            - name: DB_MAX_CONNECTIONS
+              value: "14"
             # --- Secrets (Secret Manager; populate the values out-of-band). ---
             # DATABASE_URL must be the Supabase *session* pooler (…pooler…:5432).
             - name: DATABASE_URL

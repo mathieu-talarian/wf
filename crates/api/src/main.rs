@@ -65,7 +65,11 @@ async fn main() -> std::io::Result<()> {
         .encryption_key_bytes()
         .expect("GITHUB_TOKEN_ENCRYPTION_KEY must decode to 32 bytes");
 
-    let db = wf_db::connect(&config.database_url, wf_db::ConnectOptions::default())
+    let db_opts = wf_db::ConnectOptions {
+        max_connections: config.db_max_connections as u32,
+        ..Default::default()
+    };
+    let db = wf_db::connect(&config.database_url, db_opts)
         .await
         .expect("database connection failed");
 
