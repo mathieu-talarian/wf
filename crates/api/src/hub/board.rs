@@ -63,16 +63,48 @@ struct BoardMatches {
     orphan_branches: Vec<HubOrphanBranch>,
 }
 
+/// Stale-while-revalidate + single-flight, same shape as `hub::runs`: the board
+/// fans out to GitHub *and* Jira, so a cold miss is the most expensive hub call —
+/// serving stale + refreshing in the background keeps polls off the critical path.
 pub async fn board(state: &AppState, user_id: Uuid) -> Result<HubBoard, AppError> {
+    match cache::get_board_swr(user_id) {
+        cache::Freshness::Fresh(v) => return Ok(v),
+        cache::Freshness::Stale(v) => {
+            spawn_refresh(state, user_id);
+            return Ok(v);
+        }
+        cache::Freshness::Missing => {}
+    }
+    let lock = cache::refresh_lock("board", user_id);
+    let _guard = lock.lock().await;
     if let Some(cached) = cache::get_board(user_id) {
         return Ok(cached);
     }
+    let board = compute_board(state, user_id).await?;
+    cache::put_board(user_id, &board);
+    Ok(board)
+}
+
+/// Background revalidation, guarded so only one refresh per user runs at a time.
+fn spawn_refresh(state: &AppState, user_id: Uuid) {
+    let lock = cache::refresh_lock("board", user_id);
+    let Ok(guard) = lock.try_lock_owned() else { return };
+    let state = state.clone();
+    // actix's runtime spawn (no `Send` bound): the board's enrich path is !Send,
+    // and actix workers are current-thread, so this stays on the worker arbiter.
+    actix_web::rt::spawn(async move {
+        let _guard = guard;
+        if let Ok(board) = compute_board(&state, user_id).await {
+            cache::put_board(user_id, &board);
+        }
+    });
+}
+
+async fn compute_board(state: &AppState, user_id: Uuid) -> Result<HubBoard, AppError> {
     let inputs = gather_inputs(state, user_id).await?;
     let mut matches = match_repo_activity(&inputs);
     apply_check_states(&inputs.pat.token, &mut matches.ticket_prs).await;
-    let board = assemble_board(state, user_id, &inputs, matches).await?;
-    cache::put_board(user_id, &board);
-    Ok(board)
+    assemble_board(state, user_id, &inputs, matches).await
 }
 
 // ---- Inputs --------------------------------------------------------------
@@ -126,7 +158,7 @@ async fn fetch_pulls(token: &str, repos: &[String]) -> Vec<(String, PolledPullRe
                 pulls.into_iter().map(|p| (repo.clone(), p)).collect::<Vec<_>>()
             }
         })
-        .buffered(4)
+        .buffered(MAX_REPOS)
         .collect::<Vec<_>>()
         .await
         .into_iter()

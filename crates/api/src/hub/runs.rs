@@ -26,15 +26,46 @@ pub(crate) fn run_status(run: &PolledWorkflowRun) -> &'static str {
     }
 }
 
+/// Stale-while-revalidate: serve fresh instantly, serve stale + refresh in the
+/// background (never blocking the request on GitHub), and single-flight the cold
+/// path so concurrent first hits do the live fetch once.
 pub async fn runs(state: &AppState, user_id: Uuid) -> Result<HubRuns, AppError> {
-    if let Some(cached) = cache::get_runs(user_id) {
-        return Ok(cached);
+    match cache::get_runs_swr(user_id) {
+        cache::Freshness::Fresh(v) => return Ok(v),
+        cache::Freshness::Stale(v) => {
+            spawn_refresh(state, user_id);
+            return Ok(v);
+        }
+        cache::Freshness::Missing => {}
     }
-    let lock = cache::runs_refresh_lock(user_id);
+    let lock = cache::refresh_lock("runs", user_id);
     let _guard = lock.lock().await;
     if let Some(cached) = cache::get_runs(user_id) {
         return Ok(cached);
     }
+    let result = compute_runs(state, user_id).await?;
+    cache::put_runs(user_id, &result);
+    Ok(result)
+}
+
+/// Background revalidation, guarded so only one refresh per user runs at a time.
+fn spawn_refresh(state: &AppState, user_id: Uuid) {
+    let lock = cache::refresh_lock("runs", user_id);
+    let Ok(guard) = lock.try_lock_owned() else { return };
+    let state = state.clone();
+    // actix's runtime spawn (no `Send` bound) — consistent with board's refresh.
+    actix_web::rt::spawn(async move {
+        let _guard = guard;
+        if let Ok(result) = compute_runs(&state, user_id).await {
+            cache::put_runs(user_id, &result);
+        }
+    });
+}
+
+/// The live fetch+assemble (GitHub). Kept on the live path on purpose: the
+/// `events` sync table lacks `workflowId` and in-progress runs, so it can't
+/// back favorites filtering or "running" pills.
+async fn compute_runs(state: &AppState, user_id: Uuid) -> Result<HubRuns, AppError> {
     let pat = require_pat(state, user_id).await?;
     let favorites: HashMap<String, Vec<i64>> = gh::get_favorites(&state.db, user_id).await?;
     let repos: Vec<String> = pat.selected_repos.iter().take(MAX_REPOS).cloned().collect();
@@ -43,10 +74,7 @@ pub async fn runs(state: &AppState, user_id: Uuid) -> Result<HubRuns, AppError> 
     let mut pills = build_pills(pages, &favorites);
     pills.sort_by(|a, b| b.started_at.cmp(&a.started_at));
     pills.truncate(MAX_PILLS);
-
-    let result = HubRuns { runs: pills };
-    cache::put_runs(user_id, &result);
-    Ok(result)
+    Ok(HubRuns { runs: pills })
 }
 
 /// Fetches recent runs (any status) per repo, bounded concurrency.
@@ -65,7 +93,7 @@ async fn fetch_run_pages(token: &str, repos: &[String]) -> Vec<(String, Vec<Poll
                 (repo, runs)
             }
         })
-        .buffered(4)
+        .buffered(MAX_REPOS)
         .collect()
         .await
 }

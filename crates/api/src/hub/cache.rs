@@ -20,7 +20,31 @@ struct Entry<T> {
 
 type Store<T> = RwLock<HashMap<Uuid, Entry<T>>>;
 type KeyedStore<K, T> = RwLock<HashMap<K, Entry<T>>>;
-type RunsLocks = RwLock<HashMap<Uuid, Arc<Mutex<()>>>>;
+type RefreshLocks = RwLock<HashMap<(Uuid, &'static str), Arc<Mutex<()>>>>;
+
+/// SWR freshness band for a cached value: serve `Fresh` directly, serve `Stale`
+/// while a background refresh runs, recompute on `Missing`.
+pub enum Freshness<T> {
+    Fresh(T),
+    Stale(T),
+    Missing,
+}
+
+enum Band {
+    Fresh,
+    Stale,
+    Missing,
+}
+
+fn band(elapsed: Duration, ttl: Duration, max_stale: Duration) -> Band {
+    if elapsed < ttl {
+        Band::Fresh
+    } else if elapsed < max_stale {
+        Band::Stale
+    } else {
+        Band::Missing
+    }
+}
 
 fn board_store() -> &'static Store<HubBoard> {
     static S: OnceLock<Store<HubBoard>> = OnceLock::new();
@@ -43,8 +67,8 @@ fn review_store() -> &'static KeyedStore<(Uuid, GithubQueueKey), GithubPullReque
     S.get_or_init(Default::default)
 }
 
-fn runs_locks() -> &'static RunsLocks {
-    static S: OnceLock<RunsLocks> = OnceLock::new();
+fn refresh_locks() -> &'static RefreshLocks {
+    static S: OnceLock<RefreshLocks> = OnceLock::new();
     S.get_or_init(Default::default)
 }
 
@@ -52,6 +76,13 @@ const BOARD_TTL: Duration = Duration::from_secs(30);
 const RUNS_TTL: Duration = Duration::from_secs(60);
 const INBOX_TTL: Duration = Duration::from_secs(15);
 const REVIEW_TTL: Duration = Duration::from_secs(60);
+/// Beyond this age a cached value is too old to serve stale — recompute inline.
+/// Kept at 1h so an idle user's first poll back is still instant (served stale +
+/// refreshed in the background); only a truly cold/long-idle hit blocks.
+/// ponytail: 1h ceiling — lower it if stale data on return ever feels wrong.
+const BOARD_MAX_STALE: Duration = Duration::from_secs(3600);
+const RUNS_MAX_STALE: Duration = Duration::from_secs(3600);
+const INBOX_MAX_STALE: Duration = Duration::from_secs(3600);
 
 fn get<T: Clone>(store: &Store<T>, user: Uuid, ttl: Duration) -> Option<T> {
     let map = store.read().ok()?;
@@ -71,6 +102,21 @@ where
                 value: value.clone(),
             },
         );
+    }
+}
+
+fn get_swr<T: Clone>(
+    store: &Store<T>,
+    user: Uuid,
+    ttl: Duration,
+    max_stale: Duration,
+) -> Freshness<T> {
+    let Ok(map) = store.read() else { return Freshness::Missing };
+    let Some(entry) = map.get(&user) else { return Freshness::Missing };
+    match band(entry.at.elapsed(), ttl, max_stale) {
+        Band::Fresh => Freshness::Fresh(entry.value.clone()),
+        Band::Stale => Freshness::Stale(entry.value.clone()),
+        Band::Missing => Freshness::Missing,
     }
 }
 
@@ -140,6 +186,14 @@ pub fn get_runs(user: Uuid) -> Option<HubRuns> {
     get(runs_store(), user, RUNS_TTL)
 }
 
+pub fn get_runs_swr(user: Uuid) -> Freshness<HubRuns> {
+    get_swr(runs_store(), user, RUNS_TTL, RUNS_MAX_STALE)
+}
+
+pub fn get_board_swr(user: Uuid) -> Freshness<HubBoard> {
+    get_swr(board_store(), user, BOARD_TTL, BOARD_MAX_STALE)
+}
+
 pub fn put_runs(user: Uuid, runs: &HubRuns) {
     put(runs_store(), user, runs);
 }
@@ -148,14 +202,17 @@ pub fn invalidate_runs(user: Uuid) {
     remove(runs_store(), user);
 }
 
-pub fn runs_refresh_lock(user: Uuid) -> Arc<Mutex<()>> {
-    if let Some(lock) = runs_locks().read().ok().and_then(|m| m.get(&user).cloned()) {
+/// Per-`(user, kind)` single-flight lock, shared by the SWR cold path (held via
+/// `lock().await`) and background revalidation (acquired via `try_lock_owned`).
+pub fn refresh_lock(kind: &'static str, user: Uuid) -> Arc<Mutex<()>> {
+    let key = (user, kind);
+    if let Some(lock) = refresh_locks().read().ok().and_then(|m| m.get(&key).cloned()) {
         return lock;
     }
-    runs_locks()
+    refresh_locks()
         .write()
-        .expect("runs lock map poisoned")
-        .entry(user)
+        .expect("refresh lock map poisoned")
+        .entry(key)
         .or_insert_with(|| Arc::new(Mutex::new(())))
         .clone()
 }
@@ -164,15 +221,18 @@ pub fn get_inbox(user: Uuid) -> Option<HubInbox> {
     get(inbox_store(), user, INBOX_TTL)
 }
 
+pub fn get_inbox_swr(user: Uuid) -> Freshness<HubInbox> {
+    get_swr(inbox_store(), user, INBOX_TTL, INBOX_MAX_STALE)
+}
+
 pub fn put_inbox(user: Uuid, inbox: &HubInbox) {
     put(inbox_store(), user, inbox);
 }
 
+/// Drops the cached inbox only. The morning brief keeps its own 6h TTL — a
+/// link/note/Slack mutation shouldn't force a fresh OpenAI generation.
 pub fn invalidate_inbox(user: Uuid) {
     remove(inbox_store(), user);
-    if let Ok(mut map) = brief_store().write() {
-        map.remove(&user);
-    }
 }
 
 pub fn get_review_queue(user: Uuid, key: GithubQueueKey) -> Option<GithubPullRequestQueue> {
@@ -194,4 +254,20 @@ pub fn invalidate_user(user: Uuid) {
     invalidate_runs(user);
     invalidate_inbox(user);
     invalidate_review_queues(user);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn band_picks_fresh_stale_missing_by_age() {
+        let (ttl, max) = (Duration::from_secs(10), Duration::from_secs(100));
+        assert!(matches!(band(Duration::from_secs(5), ttl, max), Band::Fresh));
+        assert!(matches!(band(Duration::from_secs(50), ttl, max), Band::Stale));
+        assert!(matches!(band(Duration::from_secs(200), ttl, max), Band::Missing));
+        // boundaries: ttl is exclusive (>= ttl is stale), max_stale exclusive too.
+        assert!(matches!(band(Duration::from_secs(10), ttl, max), Band::Stale));
+        assert!(matches!(band(Duration::from_secs(100), ttl, max), Band::Missing));
+    }
 }

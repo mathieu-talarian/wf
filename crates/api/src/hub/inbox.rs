@@ -20,10 +20,43 @@ const MAX_QA: usize = 12;
 const MAX_REVIEWS: usize = 8;
 const MAX_RUNS: usize = 6;
 
+/// Stale-while-revalidate + single-flight, matching `hub::runs`/`hub::board`.
+/// The morning brief is never generated on this path — `compute_inbox` reads it
+/// from cache and spawns generation in the background, so the request never
+/// blocks on OpenAI.
 pub async fn inbox(state: &AppState, user_id: Uuid) -> Result<HubInbox, AppError> {
+    match cache::get_inbox_swr(user_id) {
+        cache::Freshness::Fresh(v) => return Ok(v),
+        cache::Freshness::Stale(v) => {
+            spawn_refresh(state, user_id);
+            return Ok(v);
+        }
+        cache::Freshness::Missing => {}
+    }
+    let lock = cache::refresh_lock("inbox", user_id);
+    let _guard = lock.lock().await;
     if let Some(cached) = cache::get_inbox(user_id) {
         return Ok(cached);
     }
+    let inbox = compute_inbox(state, user_id).await?;
+    cache::put_inbox(user_id, &inbox);
+    Ok(inbox)
+}
+
+/// Background revalidation, guarded so only one refresh per user runs at a time.
+fn spawn_refresh(state: &AppState, user_id: Uuid) {
+    let lock = cache::refresh_lock("inbox", user_id);
+    let Ok(guard) = lock.try_lock_owned() else { return };
+    let state = state.clone();
+    actix_web::rt::spawn(async move {
+        let _guard = guard;
+        if let Ok(inbox) = compute_inbox(&state, user_id).await {
+            cache::put_inbox(user_id, &inbox);
+        }
+    });
+}
+
+async fn compute_inbox(state: &AppState, user_id: Uuid) -> Result<HubInbox, AppError> {
     let mut items: Vec<(i64, HubInboxItem)> = Vec::new();
     let (qa, runs, reviews, reminders) = tokio::join!(
         qa_items(state, user_id),
@@ -37,14 +70,13 @@ pub async fn inbox(state: &AppState, user_id: Uuid) -> Result<HubInbox, AppError
     items.extend(reminders?);
 
     let ranked = rank(items);
-    let brief = morning_brief(state, user_id, &ranked).await;
-    let inbox = HubInbox {
+    let brief = cache::get_brief(user_id); // cache-only — never blocks on OpenAI
+    spawn_brief_if_stale(state, user_id, &ranked);
+    Ok(HubInbox {
         items: ranked,
         brief,
         ranked_by: "heuristic".to_string(),
-    };
-    cache::put_inbox(user_id, &inbox);
-    Ok(inbox)
+    })
 }
 
 /// QA band: latest unread Slack message per ticket, with unread count attached.
@@ -204,27 +236,38 @@ fn rank(mut items: Vec<(i64, HubInboxItem)>) -> Vec<HubInboxItem> {
         .collect()
 }
 
-/// AI morning brief: only when the user's toggle is on AND a key is
-/// configured; cached 6h; failures degrade to no brief (never an error).
-async fn morning_brief(
-    state: &AppState,
-    user_id: Uuid,
-    items: &[HubInboxItem],
-) -> Option<crate::hub::types::HubBrief> {
-    if !brief_enabled(state, user_id).await? {
-        return None;
+/// Spawns AI morning-brief generation off the request path when no fresh brief
+/// is cached. Single-flight (a `"brief"` lock) so concurrent inbox builds don't
+/// fire duplicate OpenAI calls; the result lands in the 6h brief cache and shows
+/// on the next inbox refresh. Toggle-off / no-key / failure all degrade to nothing.
+fn spawn_brief_if_stale(state: &AppState, user_id: Uuid, items: &[HubInboxItem]) {
+    if cache::get_brief(user_id).is_some() {
+        return;
     }
-    if let Some(cached) = cache::get_brief(user_id) {
-        return Some(cached);
+    let lock = cache::refresh_lock("brief", user_id);
+    let Ok(guard) = lock.try_lock_owned() else { return };
+    let state = state.clone();
+    let items = items.to_vec();
+    actix_web::rt::spawn(async move {
+        let _guard = guard;
+        generate_brief(&state, user_id, &items).await;
+    });
+}
+
+async fn generate_brief(state: &AppState, user_id: Uuid, items: &[HubInboxItem]) {
+    if !brief_enabled(state, user_id).await.unwrap_or(false)
+        || crate::ai::openai::require_key(state).is_err()
+    {
+        return;
     }
-    crate::ai::openai::require_key(state).ok()?;
-    let summary = complete_brief(state, items).await?;
+    let Some(summary) = complete_brief(state, items).await else {
+        return;
+    };
     let brief = crate::hub::types::HubBrief {
         summary,
         generated_at: chrono::Utc::now().to_rfc3339(),
     };
     cache::put_brief(user_id, &brief);
-    Some(brief)
 }
 
 async fn brief_enabled(state: &AppState, user_id: Uuid) -> Option<bool> {

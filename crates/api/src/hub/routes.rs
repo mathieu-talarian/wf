@@ -1,8 +1,8 @@
 //! Hub routes (`hub` tag). All require a valid Supabase JWT.
 
-use actix_web::{web, HttpResponse};
+use actix_web::{web, HttpRequest, HttpResponse};
 use sea_orm::prelude::Uuid;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use wf_db::tables::ticket_links;
 
 use crate::auth::AuthUser;
@@ -13,6 +13,35 @@ use crate::state::AppState;
 
 fn user_id(user: &AuthUser) -> Result<Uuid, AppError> {
     Uuid::parse_str(&user.0.id).map_err(|e| AppError::internal(anyhow::anyhow!(e)))
+}
+
+/// Weak ETag over the serialized body — the hub payloads are polled every
+/// 20–60s and rarely change, so a 304 skips re-serialization and client re-render.
+fn etag_for(body: &[u8]) -> String {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    body.hash(&mut h);
+    format!("W/\"{:x}\"", h.finish())
+}
+
+/// Serializes `value` as JSON with an ETag, returning `304 Not Modified` when the
+/// client's `If-None-Match` already matches. ponytail: exact match only — our
+/// polling client echoes one ETag, so `*`/multi-value lists aren't handled.
+fn json_or_304<T: Serialize>(req: &HttpRequest, value: &T) -> Result<HttpResponse, AppError> {
+    let body = serde_json::to_vec(value).map_err(|e| AppError::internal(anyhow::anyhow!(e)))?;
+    let etag = etag_for(&body);
+    let matched = req
+        .headers()
+        .get("if-none-match")
+        .and_then(|v| v.to_str().ok())
+        == Some(etag.as_str());
+    if matched {
+        return Ok(HttpResponse::NotModified().insert_header(("ETag", etag)).finish());
+    }
+    Ok(HttpResponse::Ok()
+        .insert_header(("ETag", etag))
+        .content_type("application/json")
+        .body(body))
 }
 
 fn validate_target(pr_number: Option<i64>, branch: Option<&str>) -> Result<(), AppError> {
@@ -30,10 +59,11 @@ fn validate_target(pr_number: Option<i64>, branch: Option<&str>) -> Result<(), A
 /// GET /me/hub/board — the composed kanban board + orphan tray.
 pub(crate) async fn board_route(
     state: web::Data<AppState>,
+    req: HttpRequest,
     user: AuthUser,
 ) -> Result<HttpResponse, AppError> {
     let board = board::board(&state, user_id(&user)?).await?;
-    Ok(HttpResponse::Ok().json(board))
+    json_or_304(&req, &board)
 }
 
 #[utoipa::path(
@@ -111,10 +141,11 @@ pub(crate) async fn unlink_route(
 /// GET /me/hub/inbox — the ranked Needs-you feed (+ morning brief when on).
 pub(crate) async fn inbox_route(
     state: web::Data<AppState>,
+    req: HttpRequest,
     user: AuthUser,
 ) -> Result<HttpResponse, AppError> {
     let inbox = inbox::inbox(&state, user_id(&user)?).await?;
-    Ok(HttpResponse::Ok().json(inbox))
+    json_or_304(&req, &inbox)
 }
 
 #[utoipa::path(
@@ -125,10 +156,11 @@ pub(crate) async fn inbox_route(
 /// GET /me/hub/runs — actions-strip run pills (favorites first-class).
 pub(crate) async fn runs_route(
     state: web::Data<AppState>,
+    req: HttpRequest,
     user: AuthUser,
 ) -> Result<HttpResponse, AppError> {
     let runs = runs::runs(&state, user_id(&user)?).await?;
-    Ok(HttpResponse::Ok().json(runs))
+    json_or_304(&req, &runs)
 }
 
 pub fn configure(cfg: &mut web::ServiceConfig) {
@@ -137,4 +169,16 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .route("/me/hub/links", web::delete().to(unlink_route))
         .route("/me/hub/inbox", web::get().to(inbox_route))
         .route("/me/hub/runs", web::get().to(runs_route));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::etag_for;
+
+    #[test]
+    fn etag_is_stable_and_content_sensitive() {
+        assert_eq!(etag_for(b"hello"), etag_for(b"hello"));
+        assert_ne!(etag_for(b"hello"), etag_for(b"hellp"));
+        assert!(etag_for(b"hello").starts_with("W/\""));
+    }
 }
