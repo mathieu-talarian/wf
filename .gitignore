@@ -6,3 +6,10 @@
 .serena/
 graphify-out
 .codex
+
+backend
+.claude
+.claude-flow
+.swarm
+.mcp.json
+ruvector.db
