@@ -40,7 +40,7 @@ thiserror = "2"
 anyhow = "1"
 
 # ORM / DB
-sea-orm = { version = "2.0.0-rc.41", default-features = false, features = [
+sea-orm = { version = "2.0.0-rc.42", default-features = false, features = [
     "sqlx-postgres",
     "runtime-tokio-rustls",
     "macros",
@@ -92,7 +92,7 @@ tracing-opentelemetry = "0.33"
 opentelemetry-appender-tracing = "0.32"
 
 # Crypto
-aes-gcm = "0.10"
+aes-gcm = "0.11"
 base64 = "0.22"
 
 # Async trait helpers (sea-orm-migration uses this)

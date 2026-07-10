@@ -1,7 +1,5 @@
 # Workflow backend
 
-# AGENTS.md
-
 ## Load canary and user address
 
 - If this file is loaded at session start, begin your first response with exactly:
