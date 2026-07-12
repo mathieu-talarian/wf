@@ -3,6 +3,8 @@
 //! status lookup the Jira normalizer needs (spec §5.1), and the paged feed
 //! read (B-lite; activity-feed UI spec §2).
 
+use std::collections::HashMap;
+
 use sea_orm::ActiveValue::{NotSet, Set};
 use sea_orm::prelude::{DateTimeWithTimeZone, Uuid};
 use sea_orm::sea_query::OnConflict;
@@ -52,26 +54,39 @@ pub async fn insert_ignore_dups(
         .await
 }
 
-/// Latest ingested Jira `statusId` for an issue (same user, same project
-/// scope) — the Jira normalizer's "previous status" input (spec §5.1).
-pub async fn latest_jira_status(
+/// Latest ingested Jira `statusId` for a page of issues in one query.
+pub async fn latest_jira_statuses(
     db: &DatabaseConnection,
     user_id: Uuid,
     scope_key: &str,
-    issue_key: &str,
-) -> Result<Option<String>, DbErr> {
+    issue_keys: &[String],
+) -> Result<HashMap<String, String>, DbErr> {
+    if issue_keys.is_empty() {
+        return Ok(HashMap::new());
+    }
     let stmt = Statement::from_sql_and_values(
         DbBackend::Postgres,
-        "SELECT payload->>'statusId' AS status_id FROM events \
-         WHERE user_id = $1 AND source = 'jira' AND scope_key = $2 \
-           AND payload->>'issueKey' = $3 ORDER BY id DESC LIMIT 1",
-        [user_id.into(), scope_key.into(), issue_key.into()],
+        LATEST_JIRA_STATUSES_SQL,
+        [user_id.into(), scope_key.into(), serde_json::json!(issue_keys).into()],
     );
-    let row = db.query_one_raw(stmt).await?;
-    match row {
-        None => Ok(None),
-        Some(r) => r.try_get::<Option<String>>("", "status_id"),
-    }
+    db.query_all_raw(stmt)
+        .await?
+        .into_iter()
+        .map(jira_status_pair)
+        .collect()
+}
+
+const LATEST_JIRA_STATUSES_SQL: &str = r#"
+SELECT DISTINCT ON (payload->>'issueKey')
+  payload->>'issueKey' AS issue_key, payload->>'statusId' AS status_id
+FROM events
+WHERE user_id = $1 AND source = 'jira' AND scope_key = $2
+  AND payload ? 'statusId' AND $3::jsonb ? (payload->>'issueKey')
+ORDER BY payload->>'issueKey', id DESC
+"#;
+
+fn jira_status_pair(row: QueryResult) -> Result<(String, String), DbErr> {
+    Ok((row.try_get("", "issue_key")?, row.try_get("", "status_id")?))
 }
 
 /// Filter parameters for [`list_events_page`].
@@ -319,5 +334,11 @@ mod tests {
         assert!(FAILED_WORKFLOW_RUNS_SQL.contains("DISTINCT ON (scope_key, payload->>'runId')"));
         assert!(FAILED_WORKFLOW_RUNS_SQL.contains("conclusion IS DISTINCT FROM 'success'"));
         assert!(FAILED_WORKFLOW_RUNS_SQL.contains("ORDER BY scope_key, payload->>'runId'"));
+    }
+
+    #[test]
+    fn jira_status_lookup_is_batched() {
+        assert!(LATEST_JIRA_STATUSES_SQL.contains("DISTINCT ON (payload->>'issueKey')"));
+        assert!(LATEST_JIRA_STATUSES_SQL.contains("$3::jsonb ? (payload->>'issueKey')"));
     }
 }

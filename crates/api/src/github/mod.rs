@@ -3,7 +3,6 @@
 
 pub mod activity;
 pub mod dashboard;
-pub mod dashboard_cache;
 pub mod pat;
 pub mod routes;
 pub mod summary;

@@ -127,7 +127,7 @@ pub(crate) async fn status(state: web::Data<AppState>, user: AuthUser) -> Result
 #[utoipa::path(
     post, path = "/api/me/jira/token", operation_id = "jiraConnect", tag = "jira",
     security(("bearer" = [])), request_body = ConnectBody,
-    responses((status = 200, body = crate::jira::summary::JiraConnectionSummary))
+    responses((status = 202, body = crate::jira::summary::JiraConnectionSummary))
 )]
 /// POST /me/jira/token — validate credentials against Jira, then store.
 pub(crate) async fn connect(
@@ -140,8 +140,10 @@ pub(crate) async fn connect(
         email: body.email.trim().to_string(),
         token: body.token.trim().to_string(),
     };
-    let summary = pat::connect(&state, user_id(&user)?, input).await?;
-    Ok(HttpResponse::Ok().json(summary))
+    let uid = user_id(&user)?;
+    let summary = pat::connect(&state, uid, input).await?;
+    crate::scheduler::trigger(state, uid, "jira");
+    Ok(HttpResponse::Accepted().json(summary))
 }
 
 #[utoipa::path(
@@ -169,7 +171,7 @@ pub(crate) async fn disconnect(state: web::Data<AppState>, user: AuthUser) -> Re
 #[utoipa::path(
     put, path = "/api/me/jira/projects", operation_id = "jiraSetProjects", tag = "jira",
     security(("bearer" = [])), request_body = ProjectsBody,
-    responses((status = 200, body = crate::jira::summary::JiraConnectionSummary))
+    responses((status = 202, body = crate::jira::summary::JiraConnectionSummary))
 )]
 /// PUT /me/jira/projects — set selected projects.
 pub(crate) async fn set_projects(
@@ -177,8 +179,10 @@ pub(crate) async fn set_projects(
     user: AuthUser,
     body: web::Json<ProjectsBody>,
 ) -> Result<HttpResponse, AppError> {
-    let summary = pat::set_projects(&state, user_id(&user)?, &body.projects).await?;
-    Ok(HttpResponse::Ok().json(summary))
+    let uid = user_id(&user)?;
+    let summary = pat::set_projects(&state, uid, &body.projects).await?;
+    crate::scheduler::trigger(state, uid, "jira");
+    Ok(HttpResponse::Accepted().json(summary))
 }
 
 #[utoipa::path(

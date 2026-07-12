@@ -35,6 +35,14 @@ pub struct SlackChannelOption {
     pub topic: Option<String>,
 }
 
+/// One bounded channel-discovery page.
+#[derive(Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SlackChannelsPage {
+    pub channels: Vec<SlackChannelOption>,
+    pub next_cursor: Option<String>,
+}
+
 /// `GET /me/slack/threads?ticketKey=` — QA threads matched to one ticket.
 #[derive(Serialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]

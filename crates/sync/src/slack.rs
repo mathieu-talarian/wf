@@ -5,12 +5,15 @@
 //! The cursor is the max Slack `ts` seen; the **baseline poll backfills one
 //! page as already-read** so a fresh connection doesn't flood the inbox.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
+use futures::{stream, StreamExt, TryStreamExt};
 use sea_orm::prelude::{DateTimeWithTimeZone, Uuid};
 use wf_db::tables::slack_messages::{self as messages, UpsertSlackMessageInput};
 use wf_db::Db;
 use wf_slack::{SlackClient, SlackRawMessage};
+
+const PROVIDER_CONCURRENCY: usize = 4;
 
 /// `\b[A-Z][A-Z0-9]+-\d+\b` — any Jira-shaped key; the hub board narrows to
 /// keys it actually knows.
@@ -63,19 +66,27 @@ async fn expand_threads(
     channel_id: &str,
     page: &[SlackRawMessage],
 ) -> Result<Vec<SlackRawMessage>, String> {
-    let mut raw: Vec<SlackRawMessage> = Vec::new();
-    for message in page {
-        if message.reply_count.unwrap_or(0) > 0 && message.thread_ts.as_deref().is_none_or(|t| t == message.ts) {
-            let thread =
-                client.replies(channel_id, &message.ts).await.map_err(|e| e.to_string())?;
-            raw.extend(thread);
-        } else {
-            raw.push(message.clone());
-        }
-    }
+    let batches = stream::iter(page.iter().cloned())
+        .map(|message| expand_message(client, channel_id, message))
+        .buffer_unordered(PROVIDER_CONCURRENCY)
+        .try_collect::<Vec<_>>()
+        .await?;
+    let mut raw = batches.into_iter().flatten().collect::<Vec<_>>();
     raw.sort_by(|a, b| a.ts.cmp(&b.ts));
     raw.dedup_by(|a, b| a.ts == b.ts);
     Ok(raw)
+}
+
+async fn expand_message(
+    client: &SlackClient,
+    channel_id: &str,
+    message: SlackRawMessage,
+) -> Result<Vec<SlackRawMessage>, String> {
+    let is_root = message.thread_ts.as_deref().is_none_or(|ts| ts == message.ts);
+    if message.reply_count.unwrap_or(0) == 0 || !is_root {
+        return Ok(vec![message]);
+    }
+    client.replies(channel_id, &message.ts).await.map_err(|error| error.to_string())
 }
 
 /// Maps each thread root `ts` to the ticket key in its text, so replies can
@@ -101,18 +112,39 @@ async fn build_inputs(
     baseline: bool,
 ) -> Vec<UpsertSlackMessageInput> {
     let root_keys = collect_root_keys(raw);
-    let mut profiles: HashMap<String, (String, Option<String>)> = HashMap::new();
-    let mut inputs = Vec::with_capacity(raw.len());
-    for message in raw {
-        let ctx = MessageContext { channel_id, channel_name, bot_user_id, baseline };
-        if let Some(input) = message_to_input(client, &mut profiles, &root_keys, message, ctx).await {
-            inputs.push(input);
-        }
-    }
-    inputs
+    let profiles = load_profiles(client, raw).await;
+    let context = MessageContext { channel_id, channel_name, bot_user_id, baseline };
+    raw.iter()
+        .filter_map(|message| message_to_input(&profiles, &root_keys, message, context))
+        .collect()
+}
+
+async fn load_profiles(
+    client: &SlackClient,
+    raw: &[SlackRawMessage],
+) -> HashMap<String, (String, Option<String>)> {
+    let ids = raw.iter().filter_map(profile_id).collect::<HashSet<_>>();
+    stream::iter(ids)
+        .map(|id| load_profile(client, id))
+        .buffer_unordered(PROVIDER_CONCURRENCY)
+        .collect()
+        .await
+}
+
+async fn load_profile(client: &SlackClient, id: String) -> (String, (String, Option<String>)) {
+    let profile = client.user_profile(&id).await;
+    let value = profile
+        .map(|profile| (profile.display_name, profile.image_72))
+        .unwrap_or_else(|_| (id.clone(), None));
+    (id, value)
+}
+
+fn profile_id(message: &SlackRawMessage) -> Option<String> {
+    message.user.clone()
 }
 
 /// Per-poll constants threaded into each message's row construction.
+#[derive(Clone, Copy)]
 struct MessageContext<'a> {
     channel_id: &'a str,
     channel_name: &'a str,
@@ -122,9 +154,8 @@ struct MessageContext<'a> {
 
 /// Builds one upsert row, resolving the author (memoized in `profiles`) and the
 /// inherited thread ticket key. Returns `None` if the Slack ts won't parse.
-async fn message_to_input(
-    client: &SlackClient,
-    profiles: &mut HashMap<String, (String, Option<String>)>,
+fn message_to_input(
+    profiles: &HashMap<String, (String, Option<String>)>,
     root_keys: &HashMap<String, Option<String>>,
     message: &SlackRawMessage,
     ctx: MessageContext<'_>,
@@ -134,8 +165,7 @@ async fn message_to_input(
         .or_else(|| root_keys.get(&thread_ts).cloned().flatten());
     let is_bot = message.bot_id.is_some()
         || message.user.as_deref().is_some_and(|u| Some(u) == ctx.bot_user_id);
-    let (author_id, author_name, avatar) =
-        resolve_author(client, profiles, message, is_bot).await;
+    let (author_id, author_name, avatar) = resolve_author(profiles, message, is_bot);
     let posted_at = ts_to_datetime(&message.ts)?;
     Some(UpsertSlackMessageInput {
         channel_id: ctx.channel_id.to_string(),
@@ -153,10 +183,9 @@ async fn message_to_input(
     })
 }
 
-/// `users.info`, memoized per poll; bots and lookup failures degrade to ids.
-async fn resolve_author(
-    client: &SlackClient,
-    cache: &mut HashMap<String, (String, Option<String>)>,
+/// Uses the profiles loaded for this poll; bots and lookup failures degrade to ids.
+fn resolve_author(
+    profiles: &HashMap<String, (String, Option<String>)>,
     message: &SlackRawMessage,
     is_bot: bool,
 ) -> (String, String, Option<String>) {
@@ -168,15 +197,10 @@ async fn resolve_author(
     if is_bot && message.user.is_none() {
         return (id.clone(), "bot".to_string(), None);
     }
-    if let Some((name, avatar)) = cache.get(&id) {
+    if let Some((name, avatar)) = profiles.get(&id) {
         return (id.clone(), name.clone(), avatar.clone());
     }
-    let (name, avatar) = match client.user_profile(&id).await {
-        Ok(profile) => (profile.display_name, profile.image_72),
-        Err(_) => (id.clone(), None),
-    };
-    cache.insert(id.clone(), (name.clone(), avatar.clone()));
-    (id, name, avatar)
+    (id.clone(), id, None)
 }
 
 /// Slack ts (`"1718012345.000200"`) → timestamptz.

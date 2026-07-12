@@ -21,6 +21,7 @@ spec:
         # alias is what secretKeyRef.name / volumes.secret.secretName reference.
         run.googleapis.com/secrets: "__COLLECTOR_CONFIG_SECRET__:projects/__PROJECT_ID__/secrets/__COLLECTOR_CONFIG_SECRET__,wf-database-url:projects/__PROJECT_ID__/secrets/wf-database-url,wf-github-token-encryption-key:projects/__PROJECT_ID__/secrets/wf-github-token-encryption-key,wf-openai-api-key:projects/__PROJECT_ID__/secrets/wf-openai-api-key"
     spec:
+      containerConcurrency: 16
       containers:
         - image: __APP_IMAGE__
           name: app

@@ -72,6 +72,10 @@ pub struct PolledPullRequest {
     pub merged_at: Option<DateTime<Utc>>,
     pub user: Option<GithubActor>,
     #[serde(default)]
+    pub assignees: Vec<GithubActor>,
+    #[serde(default)]
+    pub requested_reviewers: Vec<GithubActor>,
+    #[serde(default)]
     pub head: Option<PolledPullHead>,
 }
 

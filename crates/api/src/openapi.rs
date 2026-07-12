@@ -29,19 +29,21 @@ impl Modify for SecurityAddon {
         title = "Workflow API",
         version = "0.1.0",
         description = "Backend API for **Workflow** — a GitHub + Jira developer dashboard. \
-This is the Rust (actix-web) port of the original TypeScript service and preserves \
-the JSON contract endpoint-for-endpoint.\n\n\
+Provider state is synchronized asynchronously into durable database projections; dashboard, hub, \
+inbox, and run reads never wait for provider fan-out calls. Credential and scope changes return \
+`202 Accepted`; consumers can follow bootstrap and freshness through \
+`GET /api/me/hub/sync-status`.\n\n\
 ## Authentication\n\
 Every `/me/**` route requires a Supabase-issued JWT in the \
 `Authorization: Bearer <token>` header (the `bearer` security scheme). The public \
 `/health` and `/hello/{name}` routes are unauthenticated.\n\n\
 ## Integrations\n\
-- **GitHub** — connect a personal access token, then load the PR dashboard \
-(stale-while-revalidate), enrich pull requests, browse branches / workflows / \
+- **GitHub** — connect a personal access token, then load the projected PR dashboard, \
+enrich pull requests on demand, browse branches / workflows / \
 environments, and run write actions: dispatch a workflow, create / merge / close \
 a PR, and manage repo + workflow favorites.\n\
 - **Jira** — connect Cloud credentials (site URL + email + API token), then load \
-the multi-queue dashboard, page queues, fetch issue detail, search by JQL, and run \
+the projected multi-queue dashboard, page provider queues on demand, fetch issue detail, search by JQL, and run \
 write actions: transition, comment, assign, log work, and create / edit issues.\n\n\
 ## Conventions\n\
 Response bodies are camelCase JSON with ISO-8601 millisecond UTC timestamps. \
@@ -141,6 +143,7 @@ Errors are returned as RFC 9457 `application/problem+json` carrying a stable \
         crate::hub::routes::unlink_route,
         crate::hub::routes::inbox_route,
         crate::hub::routes::runs_route,
+        crate::hub::routes::sync_status_route,
         // AI
         crate::ai::routes::get_settings,
         crate::ai::routes::set_settings,
@@ -158,6 +161,8 @@ Errors are returned as RFC 9457 `application/problem+json` carrying a stable \
         crate::dto::DisconnectedResponse,
         crate::github::summary::GithubConnectionSummary,
         crate::github::dashboard::RepoSelection,
+        crate::hub::types::HubSyncStatus,
+        crate::hub::types::HubSyncSource,
         crate::jira::summary::JiraConnectionSummary,
         crate::slack::summary::SlackConnectionSummary,
         crate::slack::summary::SlackChannelRef,
@@ -302,8 +307,8 @@ mod tests {
     fn spec_is_complete() {
         let doc = ApiDoc::openapi();
 
-        // 63 unique path keys (some paths carry multiple methods).
-        assert_eq!(doc.paths.paths.len(), 63, "unexpected path count");
+        // 64 unique path keys (some paths carry multiple methods).
+        assert_eq!(doc.paths.paths.len(), 64, "unexpected path count");
 
         // Bearer security scheme is registered.
         let components = doc.components.as_ref().expect("components");

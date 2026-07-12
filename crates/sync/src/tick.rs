@@ -2,21 +2,23 @@
 //! advance/back off. Bounded by batch + wall-clock budget; idempotent; safe
 //! to run concurrently (leases). Shared by `wf-api` and the future worker.
 
+use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
-use futures::stream::{self, StreamExt};
-use sea_orm::prelude::Uuid;
+use futures::stream::{self, StreamExt, TryStreamExt};
+use sea_orm::prelude::{DateTimeWithTimeZone, Uuid};
 use tracing::Instrument;
 use sea_orm::DbErr;
 use serde::Serialize;
 use wf_core::{Sealed, TokenCipher};
 use wf_db::tables::{
-    events, github_pat_connections as gh, jira_pat_connections as jira,
-    slack_connections as slack_conn, sync_state,
+    events, github_pat_connections as gh, github_pull_requests as pull_rows,
+    github_workflow_runs as run_rows, jira_issues as issue_rows,
+    jira_pat_connections as jira, slack_connections as slack_conn, sync_state,
 };
 use wf_db::Db;
 use wf_github::{GithubClient, PolledPullRequest, PolledWorkflowRun};
-use wf_jira::{JiraClient, JiraCreds};
+use wf_jira::{JiraClient, JiraCreds, PolledIssue};
 
 use crate::cursor::{self, GithubCursor, JiraCursor};
 use crate::normalize;
@@ -51,10 +53,27 @@ pub enum TickError {
     Db(#[from] DbErr),
 }
 
+struct StoredConnection<T> {
+    row: T,
+    token: Result<String, String>,
+}
+
+impl<T> StoredConnection<T> {
+    fn token(&self) -> Result<&str, ScopeError> {
+        self.token.as_deref().map_err(|error| ScopeError::Poll(error.to_string()))
+    }
+}
+
+struct TickConnections {
+    github: HashMap<Uuid, StoredConnection<gh::Model>>,
+    jira: HashMap<Uuid, StoredConnection<jira::Model>>,
+    slack: HashMap<Uuid, StoredConnection<slack_conn::Model>>,
+}
+
 /// One bounded tick (spec §4.2). Errors inside a scope are isolated (recorded
 /// + backed off); only DB-level failures abort the tick.
 pub async fn run_tick(db: &Db, cipher: &TokenCipher, opts: &TickOptions) -> Result<TickSummary, TickError> {
-    reconcile_all(db).await?;
+    let connections = reconcile_all(db, cipher).await?;
     let claimed = sync_state::claim_due(db, opts.batch, &opts.owner, opts.lease_secs).await?;
     let claimed_count = claimed.len();
     let deadline = Instant::now() + opts.budget;
@@ -62,7 +81,7 @@ pub async fn run_tick(db: &Db, cipher: &TokenCipher, opts: &TickOptions) -> Resu
     // in-flight scopes can't exhaust the DB pool. Past the budget new scopes skip —
     // their leases expire and are re-claimed next tick (spec §8).
     let deltas: Vec<Result<Option<StepDelta>, TickError>> = stream::iter(claimed)
-        .map(|scope| poll_one(db, cipher, scope, opts, deadline))
+        .map(|scope| poll_one(db, &connections, scope, opts, deadline))
         .buffer_unordered(opts.concurrency.max(1))
         .collect()
         .await;
@@ -80,7 +99,7 @@ pub async fn run_tick(db: &Db, cipher: &TokenCipher, opts: &TickOptions) -> Resu
 /// the concurrent futures free of borrows from the claimed batch.
 async fn poll_one(
     db: &Db,
-    cipher: &TokenCipher,
+    connections: &TickConnections,
     scope: sync_state::Model,
     opts: &TickOptions,
     deadline: Instant,
@@ -89,18 +108,18 @@ async fn poll_one(
         return Ok(None);
     }
     let span = tracing::info_span!("tick.scope", source = %scope.source, scope = %scope.scope_key);
-    step_scope(db, cipher, &scope, opts).instrument(span).await.map(Some)
+    step_scope(db, connections, &scope, opts).instrument(span).await.map(Some)
 }
 
 /// Polls one claimed scope, records the outcome on `sync_state`, and returns the
 /// per-scope delta. Kept pure (no `&mut summary`) so scopes run concurrently.
 async fn step_scope(
     db: &Db,
-    cipher: &TokenCipher,
+    connections: &TickConnections,
     scope: &sync_state::Model,
     opts: &TickOptions,
 ) -> Result<StepDelta, TickError> {
-    match process_scope(db, cipher, scope, opts).await {
+    match process_scope(db, connections, scope, opts).await {
         Ok(ScopeOutcome { written, new_cursor }) => {
             let cursor = new_cursor.or_else(|| scope.cursor.clone());
             sync_state::complete_ok(db, scope, &opts.owner, cursor, opts.poll_interval_secs).await?;
@@ -155,24 +174,115 @@ pub fn backoff_secs(interval: u64, consecutive_errors: i32) -> u64 {
 
 /// Rebuilds `sync_state` rows from every connection's selections (spec §4.2.1).
 /// Connections whose PAT is known-invalid get their scopes removed (spec §8).
-async fn reconcile_all(db: &Db) -> Result<(), DbErr> {
-    for conn in gh::list_all(db).await? {
-        let desired = github_scopes(&conn);
-        sync_state::replace_scopes(db, conn.user_id, "github", &desired).await?;
-    }
-    for conn in jira::list_all(db).await? {
-        let desired = jira_scopes(&conn);
-        sync_state::replace_scopes(db, conn.user_id, "jira", &desired).await?;
-    }
-    for conn in slack_conn::list_valid(db).await? {
-        let desired = slack_scopes(&conn);
-        sync_state::replace_scopes(db, conn.user_id, "slack", &desired).await?;
-    }
-    Ok(())
+async fn reconcile_all(db: &Db, cipher: &TokenCipher) -> Result<TickConnections, DbErr> {
+    let (github, jira, slack) = futures::join!(
+        gh::list_all(db),
+        jira::list_all(db),
+        slack_conn::list_all(db),
+    );
+    let (github, jira, slack) = (github?, jira?, slack?);
+    reconcile_github(db, &github).await?;
+    reconcile_jira(db, &jira).await?;
+    reconcile_slack(db, &slack).await?;
+    Ok(TickConnections {
+        github: github_connections(cipher, github),
+        jira: jira_connections(cipher, jira),
+        slack: slack_connections(cipher, slack),
+    })
+}
+
+async fn reconcile_github(db: &Db, rows: &[gh::Model]) -> Result<(), DbErr> {
+    stream::iter(rows.iter().cloned())
+        .map(|row| async move {
+            let desired = github_scopes(&row);
+            sync_state::replace_scopes(db, row.user_id, "github", &desired).await
+        })
+        .buffer_unordered(4)
+        .try_collect::<Vec<_>>()
+        .await
+        .map(|_| ())
+}
+
+async fn reconcile_jira(db: &Db, rows: &[jira::Model]) -> Result<(), DbErr> {
+    stream::iter(rows.iter().cloned())
+        .map(|row| async move {
+            let desired = jira_scopes(&row);
+            sync_state::replace_scopes(db, row.user_id, "jira", &desired).await
+        })
+        .buffer_unordered(4)
+        .try_collect::<Vec<_>>()
+        .await
+        .map(|_| ())
+}
+
+async fn reconcile_slack(db: &Db, rows: &[slack_conn::Model]) -> Result<(), DbErr> {
+    stream::iter(rows.iter().cloned())
+        .map(|row| async move {
+            let desired = slack_scopes(&row);
+            sync_state::replace_scopes(db, row.user_id, "slack", &desired).await
+        })
+        .buffer_unordered(4)
+        .try_collect::<Vec<_>>()
+        .await
+        .map(|_| ())
+}
+
+fn github_connections(
+    cipher: &TokenCipher,
+    rows: Vec<gh::Model>,
+) -> HashMap<Uuid, StoredConnection<gh::Model>> {
+    rows.into_iter()
+        .map(|row| {
+            let token = open_sealed(
+                cipher,
+                &row.access_token_ciphertext,
+                &row.access_token_iv,
+                &row.access_token_auth_tag,
+            );
+            (row.user_id, StoredConnection { row, token })
+        })
+        .collect()
+}
+
+fn jira_connections(
+    cipher: &TokenCipher,
+    rows: Vec<jira::Model>,
+) -> HashMap<Uuid, StoredConnection<jira::Model>> {
+    rows.into_iter()
+        .map(|row| {
+            let token = open_sealed(
+                cipher,
+                &row.api_token_ciphertext,
+                &row.api_token_iv,
+                &row.api_token_auth_tag,
+            );
+            (row.user_id, StoredConnection { row, token })
+        })
+        .collect()
+}
+
+fn slack_connections(
+    cipher: &TokenCipher,
+    rows: Vec<slack_conn::Model>,
+) -> HashMap<Uuid, StoredConnection<slack_conn::Model>> {
+    rows.into_iter()
+        .map(|row| {
+            let token = open_sealed(
+                cipher,
+                &row.bot_token_ciphertext,
+                &row.bot_token_iv,
+                &row.bot_token_auth_tag,
+            );
+            (row.user_id, StoredConnection { row, token })
+        })
+        .collect()
 }
 
 /// One scope per watched channel; the channel id is the scope key.
 fn slack_scopes(conn: &slack_conn::Model) -> Vec<sync_state::ScopeKey> {
+    if conn.validation_status != "valid" {
+        return vec![];
+    }
     watched_channels(conn)
         .into_iter()
         .map(|(id, _)| sync_state::ScopeKey { scope_key: id, entity_kind: "channel".to_string() })
@@ -226,35 +336,28 @@ fn json_strings(v: Option<&serde_json::Value>) -> Vec<String> {
 /// Routes a claimed scope to its source-specific poll.
 async fn process_scope(
     db: &Db,
-    cipher: &TokenCipher,
+    connections: &TickConnections,
     scope: &sync_state::Model,
     opts: &TickOptions,
 ) -> Result<ScopeOutcome, ScopeError> {
     match scope.source.as_str() {
-        "github" => process_github(db, cipher, scope, opts).await,
-        "jira" => process_jira(db, cipher, scope).await,
-        "slack" => process_slack(db, cipher, scope).await,
+        "github" => process_github(db, connections, scope, opts).await,
+        "jira" => process_jira(db, connections, scope).await,
+        "slack" => process_slack(db, connections, scope).await,
         other => Err(ScopeError::Poll(format!("unknown source {other:?}"))),
     }
 }
 
 async fn process_slack(
     db: &Db,
-    cipher: &TokenCipher,
+    connections: &TickConnections,
     scope: &sync_state::Model,
 ) -> Result<ScopeOutcome, ScopeError> {
-    let Some(conn) = slack_conn::select_row(db, scope.user_id).await? else {
+    let Some(connection) = connections.slack.get(&scope.user_id) else {
         sync_state::replace_scopes(db, scope.user_id, "slack", &[]).await?;
         return Ok(ScopeOutcome { written: 0, new_cursor: None });
     };
-    let token = open_sealed(
-        cipher,
-        &conn.bot_token_ciphertext,
-        &conn.bot_token_iv,
-        &conn.bot_token_auth_tag,
-    )
-    .map_err(ScopeError::Poll)?;
-    poll_slack(db, &token, &conn, scope).await
+    poll_slack(db, connection.token()?, &connection.row, scope).await
 }
 
 /// Resolves the channel display name from the connection's watched list, then
@@ -292,18 +395,16 @@ fn slack_channel_name(conn: &slack_conn::Model, scope: &sync_state::Model) -> St
 
 async fn process_github(
     db: &Db,
-    cipher: &TokenCipher,
+    connections: &TickConnections,
     scope: &sync_state::Model,
     opts: &TickOptions,
 ) -> Result<ScopeOutcome, ScopeError> {
-    let Some(conn) = gh::select_row(db, scope.user_id).await? else {
+    let Some(connection) = connections.github.get(&scope.user_id) else {
         // Connection deleted: scope rows are orphans — self-heal.
         sync_state::replace_scopes(db, scope.user_id, "github", &[]).await?;
         return Ok(ScopeOutcome { written: 0, new_cursor: None });
     };
-    let token = open_sealed(cipher, &conn.access_token_ciphertext, &conn.access_token_iv, &conn.access_token_auth_tag)
-        .map_err(ScopeError::Poll)?;
-    let client = make_github_client(token, opts.github_base.as_deref());
+    let client = make_github_client(connection.token()?.to_string(), opts.github_base.as_deref());
     let (owner, repo) = split_repo(&scope.scope_key).map_err(ScopeError::Poll)?;
     let cur: Option<GithubCursor> = cursor::parse(scope.cursor.as_deref());
     poll_github_kind(db, &client, scope, &owner, &repo, cur).await
@@ -340,9 +441,11 @@ async fn poll_runs(
     repo: &str,
     cur: Option<GithubCursor>,
 ) -> Result<ScopeOutcome, ScopeError> {
-    let items = wf_github::list_workflow_runs_page(client, owner, repo)
+    let items = wf_github::list_runs_any_status(client, owner, repo)
         .await
         .map_err(|e| ScopeError::Poll(e.to_string()))?;
+    let projections = items.iter().map(run_projection).collect();
+    run_rows::upsert_many(db, scope.user_id, &scope.scope_key, projections).await?;
     let (new, next) = filter_new(cur.as_ref(), &items, |r| (r.updated_at, r.id));
     let evs = collect_runs(scope.user_id, &scope.scope_key, &new);
     insert(db, evs, next).await
@@ -359,6 +462,8 @@ async fn poll_pulls(
     let items = wf_github::list_pulls_page(client, owner, repo)
         .await
         .map_err(|e| ScopeError::Poll(e.to_string()))?;
+    let projections = items.iter().map(pull_projection).collect();
+    pull_rows::upsert_many(db, scope.user_id, &scope.scope_key, projections).await?;
     let (new, next) = filter_new(cur.as_ref(), &items, |p| (p.updated_at, p.number));
     let evs = collect_pulls(scope.user_id, &scope.scope_key, &new);
     insert(db, evs, next).await
@@ -416,26 +521,88 @@ pub(crate) fn filter_new<'a, T>(
 
 async fn process_jira(
     db: &Db,
-    cipher: &TokenCipher,
+    connections: &TickConnections,
     scope: &sync_state::Model,
 ) -> Result<ScopeOutcome, ScopeError> {
-    let Some(conn) = jira::select_row(db, scope.user_id).await? else {
+    let Some(connection) = connections.jira.get(&scope.user_id) else {
         sync_state::replace_scopes(db, scope.user_id, "jira", &[]).await?;
         return Ok(ScopeOutcome { written: 0, new_cursor: None });
     };
-    let token = open_sealed(cipher, &conn.api_token_ciphertext, &conn.api_token_iv, &conn.api_token_auth_tag)
-        .map_err(ScopeError::Poll)?;
-    let creds = JiraCreds { site_url: conn.site_url.clone(), email: conn.email.clone(), token };
+    let conn = &connection.row;
+    let creds = JiraCreds {
+        site_url: conn.site_url.clone(),
+        email: conn.email.clone(),
+        token: connection.token()?.to_string(),
+    };
     let site_key = conn.cloud_id.clone().unwrap_or_else(|| host_of(&conn.site_url));
     let client = JiraClient::new(&creds);
     let issues = wf_jira::fetch_recent_issues(&client, &scope.scope_key)
         .await
         .map_err(|e| ScopeError::Poll(e.to_string()))?;
+    persist_jira_projection(db, scope, &issues).await?;
     let cur: Option<JiraCursor> = cursor::parse(scope.cursor.as_deref());
     let (new, next) = filter_new_jira(cur.as_ref(), &issues);
     let evs = collect_issues(db, scope, &site_key, &new).await?;
     let written = events::insert_ignore_dups(db, evs).await?;
     Ok(ScopeOutcome { written, new_cursor: next.as_ref().map(cursor::encode) })
+}
+
+async fn persist_jira_projection(
+    db: &Db,
+    scope: &sync_state::Model,
+    issues: &[PolledIssue],
+) -> Result<(), ScopeError> {
+    let inputs = issues.iter().filter_map(jira_projection).collect();
+    issue_rows::upsert_many(db, scope.user_id, &scope.scope_key, inputs).await?;
+    Ok(())
+}
+
+fn pull_projection(pr: &PolledPullRequest) -> pull_rows::UpsertPullRequestInput {
+    pull_rows::UpsertPullRequestInput {
+        number: pr.number,
+        state: pr.state.clone(),
+        title: pr.title.clone().unwrap_or_default(),
+        url: pr.html_url.clone().unwrap_or_default(),
+        draft: pr.draft.unwrap_or(false),
+        head_ref: pr.head.as_ref().map(|h| h.ref_name.clone()),
+        author_login: pr.user.as_ref().map(|u| u.login.clone()),
+        assignee_logins: pr.assignees.iter().map(|u| u.login.clone()).collect(),
+        requested_reviewer_logins: pr.requested_reviewers.iter().map(|u| u.login.clone()).collect(),
+        updated_at: pr.updated_at.into(),
+    }
+}
+
+fn run_projection(run: &PolledWorkflowRun) -> run_rows::UpsertWorkflowRunInput {
+    run_rows::UpsertWorkflowRunInput {
+        run_id: run.id,
+        workflow_id: run.workflow_id,
+        name: run.name.clone().or_else(|| run.display_title.clone()).unwrap_or_default(),
+        status: run.status.clone().unwrap_or_else(|| "unknown".into()),
+        conclusion: run.conclusion.clone(),
+        url: run.html_url.clone().unwrap_or_default(),
+        head_branch: run.head_branch.clone(),
+        created_at: run.created_at.into(),
+        updated_at: run.updated_at.into(),
+    }
+}
+
+fn jira_projection(issue: &PolledIssue) -> Option<issue_rows::UpsertJiraIssueInput> {
+    let now: DateTimeWithTimeZone = chrono::Utc::now().into();
+    let updated = issue.updated.as_deref().and_then(cursor::parse_jira_ts).unwrap_or(now);
+    let created = issue.created.as_deref().and_then(cursor::parse_jira_ts).unwrap_or(updated);
+    Some(issue_rows::UpsertJiraIssueInput {
+        issue_key: issue.key.clone(),
+        summary: issue.summary.clone().unwrap_or_default(),
+        status_id: issue.status_id.clone()?,
+        status_name: issue.status_name.clone().unwrap_or_default(),
+        status_category: issue.status_category.clone().unwrap_or_default(),
+        assignee_name: issue.assignee_name.clone(),
+        priority_name: issue.priority_name.clone(),
+        issue_type_name: issue.issue_type_name.clone(),
+        created_at: created,
+        updated_at: updated,
+        url: issue.url.clone(),
+    })
 }
 
 /// Jira flavor of [`filter_new`]: same baseline + strictly-after semantics
@@ -472,29 +639,28 @@ fn cmp_jira(a_ts: &str, a_key: &str, b_ts: &str, b_key: &str) -> std::cmp::Order
     }
 }
 
-/// Normalizes new issues, looking up each issue's last ingested status
-/// (spec §5.1) — sequential; page is ≤50.
+/// Normalizes new issues after one batched previous-status lookup.
 async fn collect_issues(
     db: &Db,
     scope: &sync_state::Model,
     site_key: &str,
     issues: &[&wf_jira::PolledIssue],
 ) -> Result<Vec<events::InsertEventInput>, ScopeError> {
-    let mut out = Vec::new();
-    for issue in issues {
-        let prev =
-            events::latest_jira_status(db, scope.user_id, &scope.scope_key, &issue.key).await?;
-        if let Some(ev) = normalize::jira_issue_event(
-            scope.user_id,
-            &scope.scope_key,
-            site_key,
-            prev.as_deref(),
-            issue,
-        ) {
-            out.push(ev);
-        }
-    }
-    Ok(out)
+    let keys = issues.iter().map(|issue| issue.key.clone()).collect::<Vec<_>>();
+    let previous =
+        events::latest_jira_statuses(db, scope.user_id, &scope.scope_key, &keys).await?;
+    Ok(issues
+        .iter()
+        .filter_map(|issue| {
+            normalize::jira_issue_event(
+                scope.user_id,
+                &scope.scope_key,
+                site_key,
+                previous.get(&issue.key).map(String::as_str),
+                issue,
+            )
+        })
+        .collect())
 }
 
 /// Decrypts a sealed PAT, mapping crypto failures to a scope error string.

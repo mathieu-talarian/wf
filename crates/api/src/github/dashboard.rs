@@ -1,29 +1,40 @@
-//! GitHub dashboard orchestration (port of `pat/dashboard-load.ts` + the data
-//! runners). Stale-while-revalidate over the in-memory cache and the durable
-//! `dashboard_snapshot`, with single-flight background refresh.
+//! GitHub dashboard orchestration backed by durable sync projections.
+
+use std::collections::HashSet;
 
 use actix_web::web;
 use chrono::SecondsFormat;
 use sea_orm::prelude::Uuid;
 use serde::Serialize;
-use wf_core::Sealed;
-use wf_db::tables::github_pat_connections as gh;
+use wf_db::tables::{github_pat_connections as gh, github_pull_requests};
 use wf_github::{
-    enrich_pull_request, enrich_pull_requests, fetch_dashboard, fetch_queue_pulls,
-    list_repositories, GithubAccountSummary, GithubDashboard, GithubError, GithubPullEnrichmentResult,
-    GithubPullRef, GithubPullRequestEnrichment, GithubQueueKey, GithubRepoOption, RepoRef,
+    enrich_pull_request, enrich_pull_requests, list_repositories, GithubAccountSummary,
+    GithubDashboard, GithubDashboardActor, GithubDashboardRepository, GithubError,
+    GithubPullEnrichmentResult, GithubPullRef, GithubPullRequestBasic, GithubPullRequestEnrichment,
+    GithubPullRequestQueue, GithubQueueCount, GithubQueueKey, GithubRepoOption, RepoRef,
 };
 
 use crate::error::AppError;
 use crate::github::summary::json_string_array;
-use crate::github::token_cache::CachedPat;
 use crate::state::AppState;
+
+const MAX_QUEUE_PULLS: usize = 30;
+const MAX_ENRICH_REFS: usize = 8;
+const MAX_SELECTED_REPOS: usize = 25;
+
+struct DashboardPull {
+    row: github_pull_requests::Model,
+    assignees: HashSet<String>,
+    reviewers: HashSet<String>,
+}
 
 /// `GET /me/github/repos` response.
 #[derive(Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct RepoSelection {
     pub available: Vec<GithubRepoOption>,
     pub selected: Vec<String>,
+    pub next_page: Option<u16>,
 }
 
 fn account_summary(row: &gh::Model) -> GithubAccountSummary {
@@ -39,64 +50,62 @@ fn account_summary(row: &gh::Model) -> GithubAccountSummary {
     }
 }
 
-/// The durable snapshot for `tab`, if it matches (`{ tab, data }`).
-fn snapshot_for(row: &gh::Model, tab: GithubQueueKey) -> Option<GithubDashboard> {
-    let snap = row.dashboard_snapshot.as_ref()?;
-    if snap.get("tab").and_then(|t| t.as_str()) != Some(tab.as_str()) {
-        return None;
+fn queue_meta(key: GithubQueueKey) -> &'static str {
+    match key {
+        GithubQueueKey::Assigned => "Assigned",
+        GithubQueueKey::ReviewRequested => "Review requested",
+        GithubQueueKey::Authored => "Authored",
+        GithubQueueKey::Mentioned => "Mentioned",
+        GithubQueueKey::FailingCi => "Failing CI",
     }
-    serde_json::from_value(snap.get("data")?.clone()).ok()
 }
 
-/// Decrypts the stored access token, mapping a failure to an opaque GitHub error.
-fn decrypt_token(state: &AppState, row: &gh::Model) -> Result<String, AppError> {
-    state
-        .cipher
-        .open(&Sealed {
-            ciphertext: row.access_token_ciphertext.clone(),
-            iv: row.access_token_iv.clone(),
-            auth_tag: row.access_token_auth_tag.clone(),
-        })
-        .map_err(|_| AppError::from(GithubError::Api("token decryption failed".into())))
+fn json_logins(value: &serde_json::Value) -> Vec<String> {
+    serde_json::from_value(value.clone()).unwrap_or_default()
 }
 
-/// Writes a freshly fetched dashboard through to the in-memory cache and the
-/// durable snapshot (best-effort; a snapshot write failure is non-fatal).
-async fn write_through(
-    state: &AppState,
-    user_id: Uuid,
-    tab: GithubQueueKey,
-    dashboard: &GithubDashboard,
-) {
-    state.dashboard_cache.set(user_id, tab, dashboard.clone());
-    let snapshot = serde_json::to_value(dashboard).unwrap_or(serde_json::Value::Null);
-    let _ = gh::set_dashboard_snapshot(&state.db, user_id, tab.as_str(), snapshot).await;
+fn dashboard_pull(row: github_pull_requests::Model) -> DashboardPull {
+    DashboardPull {
+        assignees: json_logins(&row.assignee_logins).into_iter().collect(),
+        reviewers: json_logins(&row.requested_reviewer_logins).into_iter().collect(),
+        row,
+    }
 }
 
-/// Fetch fresh from GitHub; write through to the token cache, the dashboard
-/// cache, and the durable snapshot (port of `dashboard-load.ts#refresh`).
-async fn refresh(
-    state: &AppState,
-    user_id: Uuid,
-    tab: GithubQueueKey,
-    row: &gh::Model,
-) -> Result<GithubDashboard, AppError> {
-    let token = decrypt_token(state, row)?;
-    let login = row.github_login.clone();
-    let repos = json_string_array(&row.selected_repos);
-    state.token_cache.set(
-        user_id,
-        CachedPat { token: token.clone(), login: login.clone(), selected_repos: repos.clone() },
-    );
+fn matches_queue(pull: &DashboardPull, key: GithubQueueKey, login: &str) -> bool {
+    match key {
+        GithubQueueKey::Assigned => pull.assignees.contains(login),
+        GithubQueueKey::ReviewRequested => pull.reviewers.contains(login),
+        GithubQueueKey::Authored => pull.row.author_login.as_deref() == Some(login),
+        GithubQueueKey::Mentioned | GithubQueueKey::FailingCi => false,
+    }
+}
 
-    let data = fetch_dashboard(&token, &login, &repos, tab).await?;
-    let dashboard = GithubDashboard {
-        account: account_summary(row),
-        queues: data.queues,
-        queue_pulls: data.queue_pulls,
-    };
-    write_through(state, user_id, tab, &dashboard).await;
-    Ok(dashboard)
+fn actor(login: String) -> GithubDashboardActor {
+    GithubDashboardActor { login, avatar_url: String::new(), url: String::new() }
+}
+
+fn pull_basic(pull: &github_pull_requests::Model) -> GithubPullRequestBasic {
+    let repo_url = format!("https://github.com/{}", pull.repo);
+    GithubPullRequestBasic {
+        repository: GithubDashboardRepository {
+            full_name: pull.repo.clone(),
+            url: repo_url.clone(),
+            actions_url: format!("{repo_url}/actions"),
+            is_private: false,
+            is_archived: false,
+            default_branch: String::new(),
+        },
+        number: pull.number,
+        title: pull.title.clone(),
+        url: pull.url.clone(),
+        author: actor(pull.author_login.clone().unwrap_or_else(|| "ghost".into())),
+        assignees: json_logins(&pull.assignee_logins).into_iter().map(actor).collect(),
+        labels: vec![],
+        comments: 0,
+        created_at: pull.updated_at.to_rfc3339(),
+        updated_at: pull.updated_at.to_rfc3339(),
+    }
 }
 
 /// Best-effort background bump of `last_used_at` (fire-and-forget).
@@ -107,64 +116,85 @@ fn spawn_touch_last_used(state: &web::Data<AppState>, user_id: Uuid) {
     });
 }
 
-/// SWR dashboard load (port of `runDashboard`).
+fn queue(
+    pulls: &[DashboardPull],
+    key: GithubQueueKey,
+    login: &str,
+) -> GithubPullRequestQueue {
+    let matching: Vec<_> = pulls.iter().filter(|p| matches_queue(p, key, login)).collect();
+    GithubPullRequestQueue {
+        key,
+        label: queue_meta(key).to_string(),
+        total_count: matching.len() as i64,
+        incomplete_results: false,
+        pull_requests: matching
+            .into_iter()
+            .take(MAX_QUEUE_PULLS)
+            .map(|pull| pull_basic(&pull.row))
+            .collect(),
+    }
+}
+
+fn queue_count(pulls: &[DashboardPull], key: GithubQueueKey, login: &str) -> GithubQueueCount {
+    let total_count = pulls.iter().filter(|pull| matches_queue(pull, key, login)).count() as i64;
+    GithubQueueCount {
+        key,
+        label: queue_meta(key).to_string(),
+        total_count,
+        incomplete_results: false,
+    }
+}
+
+fn queue_keys() -> [GithubQueueKey; 5] {
+    [
+        GithubQueueKey::Assigned,
+        GithubQueueKey::ReviewRequested,
+        GithubQueueKey::Authored,
+        GithubQueueKey::Mentioned,
+        GithubQueueKey::FailingCi,
+    ]
+}
+
+/// Dashboard assembled from the durable pull-request projection.
 pub async fn get_dashboard(
     state: &web::Data<AppState>,
     user_id: Uuid,
     tab: GithubQueueKey,
 ) -> Result<GithubDashboard, AppError> {
-    if let Some(hit) = state.dashboard_cache.peek(user_id, tab)
-        && hit.fresh
-    {
-        return Ok(hit.value);
-    }
     let Some(row) = gh::select_row(&state.db, user_id).await? else {
         return Ok(GithubDashboard::empty());
     };
     spawn_touch_last_used(state, user_id);
-
-    let stale = state
-        .dashboard_cache
-        .peek(user_id, tab)
-        .map(|h| h.value)
-        .or_else(|| snapshot_for(&row, tab));
-
-    match stale {
-        None => refresh(state, user_id, tab, &row).await,
-        Some(stale) => {
-            spawn_revalidate(state, user_id, tab, row);
-            Ok(stale)
-        }
-    }
+    let repos = json_string_array(&row.selected_repos);
+    let pulls = github_pull_requests::list_recent(&state.db, user_id, &repos, 500)
+        .await?
+        .into_iter()
+        .map(dashboard_pull)
+        .collect::<Vec<_>>();
+    let queues = queue_keys().into_iter().map(|key| queue_count(&pulls, key, &row.github_login)).collect();
+    Ok(GithubDashboard {
+        account: account_summary(&row),
+        queues,
+        queue_pulls: vec![queue(&pulls, tab, &row.github_login)],
+    })
 }
 
-/// Single-flight background revalidation: refresh in the background iff no other
-/// refresh for this `(user, tab)` is already in flight.
-fn spawn_revalidate(
-    state: &web::Data<AppState>,
-    user_id: Uuid,
-    tab: GithubQueueKey,
-    row: gh::Model,
-) {
-    if state.dashboard_cache.try_begin_refresh(user_id, tab) {
-        let st = state.clone();
-        tokio::spawn(async move {
-            let _ = refresh(&st, user_id, tab, &row).await;
-            st.dashboard_cache.end_refresh(user_id, tab);
-        });
-    }
-}
-
-/// `GET /me/github/queue` (port of `runQueue`).
+/// Queue assembled from the durable pull-request projection.
 pub async fn get_queue(
     state: &AppState,
     user_id: Uuid,
     key: GithubQueueKey,
-) -> Result<wf_github::dashboard::types::GithubPullRequestQueue, AppError> {
-    let pat = super::pat::resolve_pat(state, user_id)
+) -> Result<GithubPullRequestQueue, AppError> {
+    let Some(row) = gh::select_row(&state.db, user_id).await? else {
+        return Ok(queue(&[], key, ""));
+    };
+    let repos = json_string_array(&row.selected_repos);
+    let pulls = github_pull_requests::list_recent(&state.db, user_id, &repos, 500)
         .await?
-        .ok_or_else(|| AppError::from(GithubError::Api("No GitHub token connected".into())))?;
-    Ok(fetch_queue_pulls(&pat.token, &pat.login, &pat.selected_repos, key).await?)
+        .into_iter()
+        .map(dashboard_pull)
+        .collect::<Vec<_>>();
+    Ok(queue(&pulls, key, &row.github_login))
 }
 
 /// `GET /me/github/pull` (port of `runPullEnrichment`): enrich a single PR.
@@ -189,27 +219,35 @@ pub async fn get_pull_enrichments(
     let pat = super::pat::resolve_pat(state, user_id)
         .await?
         .ok_or_else(|| AppError::from(GithubError::Api("No GitHub token connected".into())))?;
-    Ok(enrich_pull_requests(&pat.token, refs).await)
+    Ok(enrich_pull_requests(&pat.token, &refs[..refs.len().min(MAX_ENRICH_REFS)]).await)
 }
 
 /// `GET /me/github/repos` (port of `runListRepos`).
-pub async fn list_repos(state: &AppState, user_id: Uuid) -> Result<RepoSelection, AppError> {
+pub async fn list_repos(
+    state: &AppState,
+    user_id: Uuid,
+    page: u16,
+    per_page: u16,
+) -> Result<RepoSelection, AppError> {
     let Some(pat) = super::pat::resolve_pat(state, user_id).await? else {
-        return Ok(RepoSelection { available: vec![], selected: vec![] });
+        return Ok(RepoSelection { available: vec![], selected: vec![], next_page: None });
     };
-    let available = list_repositories(&pat.token).await?;
-    Ok(RepoSelection { available, selected: pat.selected_repos })
+    let per_page = per_page.clamp(1, 100);
+    let available = list_repositories(&pat.token, page, per_page).await?;
+    let next_page = (available.len() == usize::from(per_page)).then_some(page.saturating_add(1));
+    Ok(RepoSelection { available, selected: pat.selected_repos, next_page })
 }
 
-/// `PUT /me/github/repos` (port of `runSetRepos`): set selection, bust caches,
-/// return the refreshed connection summary.
+/// `PUT /me/github/repos`: set the bounded projection scope.
 pub async fn set_selected_repos(
     state: &AppState,
     user_id: Uuid,
     repos: &[String],
 ) -> Result<crate::github::summary::GithubConnectionSummary, AppError> {
+    if repos.len() > MAX_SELECTED_REPOS {
+        return Err(AppError::validation("At most 25 GitHub repositories may be selected."));
+    }
     gh::set_selected_repos(&state.db, user_id, repos).await?;
     state.token_cache.clear(user_id);
-    state.dashboard_cache.clear(user_id);
     super::pat::status(state, user_id).await
 }

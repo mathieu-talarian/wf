@@ -93,6 +93,9 @@ pub async fn set_projects(
     user_id: Uuid,
     projects: &[String],
 ) -> Result<JiraConnectionSummary, AppError> {
+    if projects.len() > 10 {
+        return Err(AppError::validation("At most 10 Jira projects may be selected."));
+    }
     jira::set_selected_projects(&state.db, user_id, projects).await?;
     status(state, user_id).await
 }

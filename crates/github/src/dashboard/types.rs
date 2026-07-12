@@ -1,7 +1,6 @@
 //! Dashboard response DTOs (port of `dashboard/types.ts` + `account.ts`). Field
 //! names serialize camelCase to match the existing API contract. All derive
-//! `Deserialize` too, since the full dashboard is persisted as a jsonb snapshot
-//! (`dashboard_snapshot`) and read back on a cold start.
+//! `Deserialize` remains for wire compatibility and fixture decoding.
 
 use serde::{Deserialize, Serialize};
 
@@ -130,8 +129,7 @@ pub struct GithubRepoOption {
     pub is_archived: bool,
 }
 
-/// The full dashboard response (port of `GithubDashboardT`). Persisted as the
-/// `dashboard_snapshot` jsonb for cold-start SWR.
+/// The full dashboard response (port of `GithubDashboardT`).
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct GithubDashboard {

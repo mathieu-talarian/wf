@@ -8,6 +8,9 @@
 
 pub mod events;
 pub mod github_pat_connections;
+pub mod github_pull_requests;
+pub mod github_workflow_runs;
+pub mod jira_issues;
 pub mod jira_pat_connections;
 pub mod note_links;
 pub mod notes;

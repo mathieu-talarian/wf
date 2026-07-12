@@ -8,7 +8,9 @@ use wf_db::tables::slack_connections::{self as slack, UpsertSlackConnectionInput
 use wf_slack::{SlackClient, SlackTokenState};
 
 use crate::error::AppError;
-use crate::slack::summary::{self, SlackChannelOption, SlackChannelRef, SlackConnectionSummary};
+use crate::slack::summary::{
+    self, SlackChannelOption, SlackChannelRef, SlackChannelsPage, SlackConnectionSummary,
+};
 use crate::state::AppState;
 
 pub async fn status(state: &AppState, user_id: Uuid) -> Result<SlackConnectionSummary, AppError> {
@@ -98,14 +100,16 @@ pub async fn disconnect(state: &AppState, user_id: Uuid) -> Result<(), AppError>
 pub async fn list_channels(
     state: &AppState,
     user_id: Uuid,
-) -> Result<Vec<SlackChannelOption>, AppError> {
+    cursor: Option<&str>,
+    limit: u16,
+) -> Result<SlackChannelsPage, AppError> {
     let row = require_row(state, user_id).await?;
     let token = open_token(state, &row)?;
-    let channels = SlackClient::new(&token).list_channels().await.map_err(|e| {
-        let app: AppError = e.into();
-        app
-    })?;
-    Ok(channels
+    let (channels, next_cursor) = SlackClient::new(&token)
+        .list_channels_page(cursor, limit)
+        .await
+        .map_err(AppError::from)?;
+    let channels = channels
         .into_iter()
         .map(|c| SlackChannelOption {
             id: c.id,
@@ -113,25 +117,21 @@ pub async fn list_channels(
             is_member: c.is_member,
             topic: c.topic.map(|t| t.value),
         })
-        .collect())
+        .collect();
+    Ok(SlackChannelsPage { channels, next_cursor })
 }
 
-/// Sets the watched-channel list; ids are resolved to names via
-/// `conversations.list` so the stored refs stay self-describing.
+/// Sets the watched-channel projection scope without another provider read.
 pub async fn set_channels(
     state: &AppState,
     user_id: Uuid,
-    channel_ids: &[String],
+    channels: &[SlackChannelRef],
 ) -> Result<SlackConnectionSummary, AppError> {
-    let row = require_row(state, user_id).await?;
-    let token = open_token(state, &row)?;
-    let known = SlackClient::new(&token).list_channels().await.map_err(AppError::from)?;
-    let refs: Vec<SlackChannelRef> = known
-        .into_iter()
-        .filter(|c| channel_ids.contains(&c.id))
-        .map(|c| SlackChannelRef { id: c.id, name: c.name })
-        .collect();
-    let json = serde_json::to_value(&refs).map_err(|e| AppError::internal(anyhow::anyhow!(e)))?;
+    if channels.len() > 10 {
+        return Err(AppError::validation("At most 10 Slack channels may be watched."));
+    }
+    require_row(state, user_id).await?;
+    let json = serde_json::to_value(channels).map_err(|e| AppError::internal(anyhow::anyhow!(e)))?;
     slack::set_channels(&state.db, user_id, json).await?;
     status(state, user_id).await
 }

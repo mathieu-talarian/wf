@@ -6,13 +6,18 @@
 //! serving traffic, and stall when it idles or scales to zero (see
 //! DEPLOYMENT.md).
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use actix_web::web;
 use tokio::time::MissedTickBehavior;
+use tokio::sync::Semaphore;
 use wf_sync::TickOptions;
 
 use crate::state::AppState;
+
+static TICK_GATE: Semaphore = Semaphore::const_new(1);
+static TICK_PENDING: AtomicBool = AtomicBool::new(false);
 
 fn tick_options(state: &AppState) -> TickOptions {
     TickOptions {
@@ -27,6 +32,17 @@ fn tick_options(state: &AppState) -> TickOptions {
 }
 
 async fn run_once(state: &AppState) {
+    TICK_PENDING.store(true, Ordering::Release);
+    let Ok(_permit) = TICK_GATE.acquire().await else {
+        return;
+    };
+    if !TICK_PENDING.swap(false, Ordering::AcqRel) {
+        return;
+    }
+    execute_tick(state).await;
+}
+
+async fn execute_tick(state: &AppState) {
     let started = std::time::Instant::now();
     match wf_sync::run_tick(&state.db, &state.cipher, &tick_options(state)).await {
         Ok(s) => tracing::info!(
@@ -59,4 +75,20 @@ pub(crate) fn spawn(state: web::Data<AppState>) {
     let secs = state.config.tick_scheduler_secs;
     tracing::info!(target: "tick.scheduler", interval_secs = secs, "tick scheduler started");
     actix_web::rt::spawn(run_loop(state, Duration::from_secs(secs)));
+}
+
+/// Runs an immediate reconciliation/poll after a connection scope changes.
+pub(crate) fn trigger(
+    state: web::Data<AppState>,
+    user_id: sea_orm::prelude::Uuid,
+    source: &'static str,
+) {
+    actix_web::rt::spawn(async move {
+        if let Err(error) =
+            wf_db::tables::sync_state::mark_source_due(&state.db, user_id, source).await
+        {
+            tracing::debug!(%error, %user_id, source, "failed to prioritize sync scopes");
+        }
+        run_once(&state).await;
+    });
 }

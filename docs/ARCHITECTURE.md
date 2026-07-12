@@ -50,7 +50,6 @@ Boot order in `crates/api/src/main.rs`: load `.env` (dotenvy) → parse `Config`
 | `jwks` | `Arc<JwksVerifier>` | Supabase JWKS fetch + ES256 JWT verification |
 | `cipher` | `Arc<TokenCipher>` | AES-256-GCM seal/open for stored tokens |
 | `token_cache` | `Arc<TokenCache>` | In-memory cache of decrypted GitHub tokens |
-| `dashboard_cache` | `Arc<DashboardCache>` | Stale-while-revalidate GitHub dashboard cache |
 
 ---
 
@@ -108,8 +107,8 @@ Seven crates; the `wf-` prefix avoids the std `core` name clash. All opt into th
 | `error.rs` | `AppError` → RFC 9457 responses with stable slugs + `reason`. |
 | `dto.rs` | Shared response DTOs (`#[serde(rename_all = "camelCase")]`). |
 | `routes/` | `health.rs` (`/health`, `/hello/{name}`), `me.rs` (`GET /me` — verifies JWT, upserts user), `events.rs` (`GET /me/events` — keyset-paged feed read). |
-| `scheduler.rs` | In-process tick scheduler: background task spawned at boot, runs `wf_sync::run_tick` every `TICK_SCHEDULER_SECS`. |
-| `github/` | `routes.rs` (22 routes), `pat.rs` (connect/validate/disconnect), `dashboard.rs` + `dashboard_cache.rs` (SWR snapshot cache; the dashboard route also sets **opportunistic sync priority hints** by marking the user's sync scopes overdue), `token_cache.rs`, `activity.rs`, `summary.rs`. |
+| `scheduler.rs` | In-process tick scheduler: background task spawned at boot, runs `wf_sync::run_tick` every `TICK_SCHEDULER_SECS`; connection/scope mutations also trigger an immediate detached tick. |
+| `github/` | `routes.rs` (22 routes), `pat.rs` (connect/validate/disconnect), `dashboard.rs` (durable projection reads), `token_cache.rs`, `activity.rs`, `summary.rs`. |
 | `jira/` | `routes.rs` (23 routes), `pat.rs`, `data.rs`, `actions.rs`, `summary.rs`. |
 | `middleware/request_tracing.rs` | Root span per request, W3C trace-context propagation (continues Cloud Run's `traceparent`), `http.server.*` metrics. |
 | `telemetry.rs` | OTel SDK init (traces + metrics + logs) + `TelemetryGuard` (see §11). |
@@ -162,7 +161,7 @@ Connection lifecycle:
 | Method & path | Purpose |
 |---|---|
 | `GET /api/me/github` | Connection status summary (login, scopes, validation state, selected repos, last-four — never the token). |
-| `POST /api/me/github/token` | Connect: validate a PAT against GitHub, seal it (AES-256-GCM), upsert the connection row. |
+| `POST /api/me/github/token` | Connect: validate a PAT against GitHub, seal it (AES-256-GCM), upsert the connection row, return `202`, and trigger projection bootstrap. |
 | `POST /api/me/github/token/validate` | Re-validate the stored PAT; updates `validation_status` / `validation_error`. |
 | `DELETE /api/me/github` | Disconnect: delete the connection row. |
 
@@ -170,9 +169,9 @@ Reads:
 
 | Method & path | Purpose |
 |---|---|
-| `GET /api/me/github/dashboard` | The PR dashboard. Serves the persisted snapshot **stale-while-revalidate** (in-memory + `dashboard_snapshot` jsonb), revalidates in the background, and opportunistically marks the user's sync scopes overdue (priority hint for the next tick). |
+| `GET /api/me/github/dashboard` | PR dashboard assembled directly from the durable `github_pull_requests` projection; no provider I/O or process-local data cache. |
 | `GET /api/me/github/queue` | Work queue view. |
-| `GET /api/me/github/repos` | Repos selectable for the dashboard. |
+| `GET /api/me/github/repos` | Paginated repos selectable for the dashboard (`page`, `perPage`, `nextPage`). |
 | `GET /api/me/github/pull` | Single PR detail. |
 | `POST /api/me/github/pulls/enrich` | Batch-enrich PRs (reviews, checks, mergeability) with bounded concurrency. |
 | `GET /api/me/github/branches` | Branch → "open a PR" prompts across selected repos (GraphQL, one repo per request — see §3.3; branches whose PRs merged are filtered out). |
@@ -311,7 +310,7 @@ Parsed fail-fast at boot by `wf_core::Config` (`crates/core/src/config.rs`). Emp
 | `permissions` | jsonb, nullable | Fine-grained permissions. |
 | `selected_repos` | jsonb, nullable | Dashboard repo selection. |
 | `favorite_workflows` | jsonb, nullable | |
-| `dashboard_snapshot` | jsonb, nullable | Persisted SWR snapshot (§9). |
+| `dashboard_snapshot` | jsonb, nullable | Legacy compatibility column; new reads use provider projections. |
 | `last_four` | text, nullable | Display-only token suffix. |
 | `expires_at`, `last_validated_at`, `last_used_at` | timestamptz, nullable | |
 | `validation_status` | text | + `validation_error` (nullable). |
@@ -364,22 +363,27 @@ Parsed fail-fast at boot by `wf_core::Config` (`crates/core/src/config.rs`). Emp
 
 1. **Reconcile scopes** — derive the set of pollable scopes from current connections (selected repos × entity kinds for GitHub; selected projects for Jira) and upsert/remove `sync_state` rows.
 2. **Claim due rows** — `SELECT ... FOR UPDATE SKIP LOCKED` on rows with `next_poll_at <= now()` and no live lease, up to `TICK_BATCH_SIZE`; stamp `lease_owner`/`lease_until`. Safe to run concurrently.
-3. **Poll each scope** — GitHub PRs / workflow runs, Jira issue activity, from the stored cursor (Jira cursors compensate for JQL evaluating timestamps in the **account timezone**, not UTC).
-4. **Normalize + insert** — map to `events` rows; inserts are idempotent on `(user_id, source, scope_key, external_id)`-style dedup, so re-polls never duplicate.
+3. **Poll each scope** — GitHub PRs / workflow runs, Jira issue activity, from the stored cursor (Jira cursors compensate for JQL evaluating timestamps in the **account timezone**, not UTC). Provider fan-outs use bounded concurrency and the shared HTTP connection pool.
+4. **Project + normalize** — upsert current state into `github_pull_requests`, `github_workflow_runs`, or `jira_issues`, then map changes to `events`; event inserts are idempotent on `(user_id, source, scope_key, external_id)`-style dedup, so re-polls never duplicate.
 5. **Advance or back off** — success: store new cursor, `next_poll_at = now() + POLL_INTERVAL_SECS`, clear errors. Failure: increment `consecutive_errors`, exponential backoff, record `last_error`. The whole tick stops when `TICK_BUDGET_MS` is exhausted; abandoned leases expire and are reclaimed by a later tick.
 
-**Scheduling:** `wf-api` spawns a background task at boot (`scheduler.rs`) that runs a tick immediately (startup reconciliation) and then every `TICK_SCHEDULER_SECS` (default 120), logging a `tick.scheduler` summary line per run. On Cloud Run (default scale-to-zero + CPU throttling) this is **best-effort**: ticks run at cold start and while the instance serves traffic, and stall when it idles — the next startup tick reconciles the backlog (see `DEPLOYMENT.md`). Concurrent ticks across overlapping instances are safe (`FOR UPDATE SKIP LOCKED` + insert dedup). The GitHub dashboard route additionally marks that user's scopes overdue, so an active user's next tick refreshes them first.
+**Scheduling:** `wf-api` spawns a background task at boot (`scheduler.rs`) that runs a tick immediately (startup reconciliation) and then every `TICK_SCHEDULER_SECS` (default 120), logging a `tick.scheduler` summary line per run. Connection and scope mutations return `202 Accepted` and trigger another detached tick immediately; `GET /api/me/hub/sync-status` exposes per-source bootstrap/freshness state. A process-wide single-flight gate prevents periodic and mutation-triggered ticks from overlapping inside one API instance, and coalesces a burst of queued requests into at most one follow-up tick. On Cloud Run (default scale-to-zero + CPU throttling) the periodic cadence is **best-effort**: ticks run at cold start and while the instance serves traffic, and stall when it idles — the next startup or mutation-triggered tick reconciles the backlog (see `DEPLOYMENT.md`). Concurrent ticks across overlapping instances are safe (`FOR UPDATE SKIP LOCKED` + insert dedup).
+
+At tick start, the connection tables are loaded once and credentials are decrypted once into an immutable tick snapshot. Scope reconciliation and every claimed scope use that snapshot, avoiding repeated connection queries and AES work. Jira previous-status lookup is also batched once per page rather than queried once per issue.
 
 **Verification tooling:** `cargo run -p wf-sync --example tick_smoke` (live); `DATABASE_URL=... cargo test -p wf-sync --test tick_db -- --test-threads=1` (gated integration tests using wiremock for GitHub — note they redirect GitHub calls for **real scopes** in that DB, so point them at a dev database).
 
 ---
 
-## 9. Caching
+## 9. Durable read models and bounded reads
 
 - **`TokenCache`** (`crates/api/src/github/token_cache.rs`) — in-memory cache of decrypted GitHub tokens, avoiding a DB read + AES open per request.
-- **`DashboardCache`** (`crates/api/src/github/dashboard_cache.rs`) — stale-while-revalidate for the GitHub dashboard: requests get the last snapshot immediately (also persisted in `github_pat_connections.dashboard_snapshot` so it survives restarts) while a background refresh runs; the response indicates staleness so the web app can re-fetch.
+- **Provider projections** — `github_pull_requests`, `github_workflow_runs`, and `jira_issues` are durable current-state tables populated by `wf-sync`. Hub, GitHub dashboard, Jira dashboard, inbox, and run reads query these tables and never wait for providers.
+- **Bounded database work** — Slack unread counts, unread ticket summaries, reminder counts, failed workflow runs, and Jira status history are filtered/aggregated in PostgreSQL. Read handlers receive compact bounded result sets instead of loading rows and grouping them in Rust.
+- **Consolidated hub reads** — the board loads connections/badges concurrently, then provider projections concurrently. It reuses the loaded connection rows and projected run rows instead of issuing duplicate favorites, selection, and run queries.
+- **No process-local data cache** — the former dashboard/hub SWR caches were removed. Hub ETags use a stable projection freshness timestamp, so an unchanged poll can actually return `304 Not Modified`; wall-clock request time is not part of the response hash.
 
-Both are process-local (`Arc` in `AppState`); Cloud Run scale-out means per-instance caches, which is acceptable because the DB snapshot is the durable layer.
+Only decrypted credentials remain process-local; provider data is database-backed and consistent across Cloud Run instances.
 
 ---
 

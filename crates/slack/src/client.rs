@@ -127,26 +127,22 @@ impl SlackClient {
             .map_err(|_| SlackApiError::envelope("invalid_auth_test_response"))
     }
 
-    /// `conversations.list` — all public channels, pagination followed.
-    pub async fn list_channels(&self) -> Result<Vec<SlackChannelInfo>, SlackApiError> {
-        let mut channels: Vec<SlackChannelInfo> = Vec::new();
-        let mut cursor: Option<String> = None;
-        loop {
-            let mut query = vec![
-                ("types", "public_channel".to_string()),
-                ("exclude_archived", "true".to_string()),
-                ("limit", "200".to_string()),
-            ];
-            if let Some(c) = &cursor {
-                query.push(("cursor", c.clone()));
-            }
-            let (payload, next) = self.call("conversations.list", &query, None).await?;
-            channels.extend(Self::field::<Vec<SlackChannelInfo>>(&payload, "channels")?);
-            match next {
-                Some(c) => cursor = Some(c),
-                None => return Ok(channels),
-            }
+    /// One cursor page of public, non-archived channels.
+    pub async fn list_channels_page(
+        &self,
+        cursor: Option<&str>,
+        limit: u16,
+    ) -> Result<(Vec<SlackChannelInfo>, Option<String>), SlackApiError> {
+        let mut query = vec![
+            ("types", "public_channel".to_string()),
+            ("exclude_archived", "true".to_string()),
+            ("limit", limit.clamp(1, 200).to_string()),
+        ];
+        if let Some(cursor) = cursor.filter(|value| !value.is_empty()) {
+            query.push(("cursor", cursor.to_string()));
         }
+        let (payload, next) = self.call("conversations.list", &query, None).await?;
+        Ok((Self::field(&payload, "channels")?, next))
     }
 
     /// `conversations.history` — messages in a channel newer than `oldest`
@@ -229,5 +225,35 @@ impl SlackClient {
         }
         parsed.real_name = real_name;
         Ok(parsed)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wiremock::matchers::{method, path, query_param};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    #[tokio::test]
+    async fn channel_listing_fetches_one_cursor_page() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/conversations.list"))
+            .and(query_param("limit", "50"))
+            .and(query_param("cursor", "page-2"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "ok": true,
+                "channels": [{"id": "C1", "name": "qa"}],
+                "response_metadata": {"next_cursor": "page-3"}
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let result = SlackClient::with_base("token", &server.uri())
+            .list_channels_page(Some("page-2"), 50)
+            .await
+            .unwrap();
+        assert_eq!(result.0.len(), 1);
+        assert_eq!(result.1.as_deref(), Some("page-3"));
     }
 }

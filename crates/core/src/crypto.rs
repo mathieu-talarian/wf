@@ -9,7 +9,7 @@
 //!   - empty AAD,
 //!   - every field base64 (standard alphabet, padded).
 
-use aes_gcm::aead::{AeadInPlace, KeyInit};
+use aes_gcm::aead::{AeadInOut, KeyInit};
 use aes_gcm::{Aes256Gcm, Nonce};
 use base64::Engine;
 use thiserror::Error;
@@ -52,12 +52,12 @@ impl TokenCipher {
     pub fn seal(&self, plaintext: &str) -> Result<Sealed, CryptoError> {
         let mut iv = [0u8; IV_BYTES];
         getrandom::fill(&mut iv).map_err(|e| CryptoError::Seal(e.to_string()))?;
-        let nonce = Nonce::from_slice(&iv);
+        let nonce = Nonce::from(iv);
 
         let mut buf = plaintext.as_bytes().to_vec();
         let tag = self
             .cipher
-            .encrypt_in_place_detached(nonce, b"", &mut buf)
+            .encrypt_inout_detached(&nonce, b"", (&mut buf[..]).into())
             .map_err(|e| CryptoError::Seal(e.to_string()))?;
 
         let b64 = base64::engine::general_purpose::STANDARD;
@@ -79,14 +79,13 @@ impl TokenCipher {
         let tag = decode("authTag", &sealed.auth_tag)?;
         let mut buf = decode("ciphertext", &sealed.ciphertext)?;
 
-        if iv.len() != IV_BYTES {
-            return Err(CryptoError::Open(format!("iv must be {IV_BYTES} bytes")));
-        }
-        let nonce = Nonce::from_slice(&iv);
-        let tag = aes_gcm::Tag::from_slice(&tag);
+        let nonce = Nonce::try_from(iv.as_slice())
+            .map_err(|_| CryptoError::Open(format!("iv must be {IV_BYTES} bytes")))?;
+        let tag = aes_gcm::Tag::try_from(tag.as_slice())
+            .map_err(|_| CryptoError::Open("authTag must be 16 bytes".to_string()))?;
 
         self.cipher
-            .decrypt_in_place_detached(nonce, b"", &mut buf, tag)
+            .decrypt_inout_detached(&nonce, b"", (&mut buf[..]).into(), &tag)
             .map_err(|e| CryptoError::Open(e.to_string()))?;
 
         String::from_utf8(buf).map_err(|e| CryptoError::Open(e.to_string()))

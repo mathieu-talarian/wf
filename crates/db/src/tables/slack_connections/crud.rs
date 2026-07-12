@@ -73,12 +73,9 @@ pub async fn select_row(
     slack::Entity::find_by_id(user_id).one(db).await
 }
 
-/// All rows with a `valid` token — the sync tick polls these.
-pub async fn list_valid(db: &DatabaseConnection) -> Result<Vec<slack::Model>, DbErr> {
-    slack::Entity::find()
-        .filter(slack::Column::ValidationStatus.eq("valid"))
-        .all(db)
-        .await
+/// All connections — the tick reconciles valid and invalid scopes alike.
+pub async fn list_all(db: &DatabaseConnection) -> Result<Vec<slack::Model>, DbErr> {
+    slack::Entity::find().all(db).await
 }
 
 pub async fn set_validation(

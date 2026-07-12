@@ -19,6 +19,9 @@ pub struct PolledIssue {
     pub status_id: Option<String>,
     pub status_name: Option<String>,
     pub status_category: Option<String>,
+    pub assignee_name: Option<String>,
+    pub priority_name: Option<String>,
+    pub issue_type_name: Option<String>,
     pub created: Option<String>,
     pub updated: Option<String>,
     pub url: String,
@@ -39,8 +42,19 @@ struct RawPollIssue {
 struct RawPollFields {
     summary: Option<String>,
     status: Option<RawStatus>,
+    assignee: Option<RawNamed>,
+    priority: Option<RawNamed>,
+    #[serde(rename = "issuetype")]
+    issue_type: Option<RawNamed>,
     created: Option<String>,
     updated: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct RawNamed {
+    name: Option<String>,
+    #[serde(rename = "displayName")]
+    display_name: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -69,7 +83,7 @@ pub async fn fetch_recent_issues(
     let body = json!({
         "jql": recent_issues_jql(project_key),
         "maxResults": 50,
-        "fields": ["summary", "status", "created", "updated"],
+        "fields": ["summary", "status", "assignee", "priority", "issuetype", "created", "updated"],
     });
     let res: PollSearchResponse = client.post("/rest/api/3/search/jql", &body).await?;
     let site = client.site_url().to_string();
@@ -77,21 +91,32 @@ pub async fn fetch_recent_issues(
 }
 
 fn to_polled(site_url: &str, raw: RawPollIssue) -> PolledIssue {
-    let status = raw.fields.status;
+    let fields = raw.fields;
+    let (status_id, status_name, status_category) = status_parts(fields.status);
     PolledIssue {
         // site_url is a normalized origin (no trailing slash) — see site_url.rs
         url: format!("{site_url}/browse/{}", raw.key),
         key: raw.key,
-        summary: raw.fields.summary,
-        status_id: status.as_ref().and_then(|s| s.id.clone()),
-        status_name: status.as_ref().and_then(|s| s.name.clone()),
-        status_category: status
-            .as_ref()
-            .and_then(|s| s.status_category.as_ref())
-            .and_then(|c| c.key.clone()),
-        created: raw.fields.created,
-        updated: raw.fields.updated,
+        summary: fields.summary,
+        status_id,
+        status_name,
+        status_category,
+        assignee_name: fields.assignee.and_then(|v| v.display_name.or(v.name)),
+        priority_name: fields.priority.and_then(|v| v.name),
+        issue_type_name: fields.issue_type.and_then(|v| v.name),
+        created: fields.created,
+        updated: fields.updated,
     }
+}
+
+fn status_parts(status: Option<RawStatus>) -> (Option<String>, Option<String>, Option<String>) {
+    let category = status
+        .as_ref()
+        .and_then(|s| s.status_category.as_ref())
+        .and_then(|c| c.key.clone());
+    let id = status.as_ref().and_then(|s| s.id.clone());
+    let name = status.and_then(|s| s.name);
+    (id, name, category)
 }
 
 #[cfg(test)]
@@ -109,7 +134,7 @@ mod tests {
     #[tokio::test]
     async fn parses_poll_page() {
         let fixture = serde_json::json!({ "issues": [{"key": "PROJ-1", "fields": {"summary": "Fix login", "status": { "id": "3", "name": "In Progress", "statusCategory": { "key": "indeterminate" }}, "created": "2026-06-01T10:00:00.000+0200", "updated": "2026-06-02T11:00:00.000+0200"}}]});
-        let expected = serde_json::json!({"jql": "project = \"PROJ\" ORDER BY updated DESC", "maxResults": 50, "fields": ["summary", "status", "created", "updated"]});
+        let expected = serde_json::json!({"jql": "project = \"PROJ\" ORDER BY updated DESC", "maxResults": 50, "fields": ["summary", "status", "assignee", "priority", "issuetype", "created", "updated"]});
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/rest/api/3/search/jql"))

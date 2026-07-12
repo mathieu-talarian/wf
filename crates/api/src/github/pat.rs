@@ -20,7 +20,7 @@ pub async fn status(
     Ok(summary::from_row(row))
 }
 
-/// Seals + upserts a freshly validated token, then busts the caches.
+/// Seals + upserts a freshly validated token, then busts its credential cache.
 async fn store_validated(
     state: &AppState,
     user_id: Uuid,

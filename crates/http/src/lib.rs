@@ -26,7 +26,9 @@ pub type HttpClient = ClientWithMiddleware;
 fn build(follow_redirects: bool) -> ClientWithMiddleware {
     let mut builder = reqwest::Client::builder()
         .timeout(HTTP_TIMEOUT)
-        .connect_timeout(CONNECT_TIMEOUT);
+        .connect_timeout(CONNECT_TIMEOUT)
+        .pool_max_idle_per_host(16)
+        .pool_idle_timeout(Duration::from_secs(120));
     if !follow_redirects {
         builder = builder.redirect(reqwest::redirect::Policy::none());
     }

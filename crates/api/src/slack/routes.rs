@@ -6,8 +6,8 @@ use serde::Deserialize;
 
 use crate::auth::AuthUser;
 use crate::error::AppError;
-use crate::hub::cache as hub_cache;
 use crate::slack::{data, pat};
+use crate::slack::summary::SlackChannelRef;
 use crate::state::AppState;
 
 #[derive(Deserialize, utoipa::ToSchema)]
@@ -18,7 +18,14 @@ pub(crate) struct SlackTokenBody {
 #[derive(Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct SlackChannelsBody {
-    channel_ids: Vec<String>,
+    channels: Vec<SlackChannelRef>,
+}
+
+#[derive(Deserialize, utoipa::IntoParams)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SlackChannelsQuery {
+    cursor: Option<String>,
+    limit: Option<u16>,
 }
 
 #[derive(Deserialize, utoipa::ToSchema)]
@@ -62,7 +69,7 @@ pub(crate) async fn status(
 #[utoipa::path(
     post, path = "/api/me/slack/token", operation_id = "slackConnect", tag = "slack",
     security(("bearer" = [])), request_body = SlackTokenBody,
-    responses((status = 200, body = crate::slack::summary::SlackConnectionSummary))
+    responses((status = 202, body = crate::slack::summary::SlackConnectionSummary))
 )]
 /// POST /me/slack/token — store + validate a bot token.
 pub(crate) async fn connect(
@@ -72,8 +79,8 @@ pub(crate) async fn connect(
 ) -> Result<HttpResponse, AppError> {
     let uid = user_id(&user)?;
     let summary = pat::connect(&state, uid, &body.token).await?;
-    hub_cache::invalidate_user(uid);
-    Ok(HttpResponse::Ok().json(summary))
+    crate::scheduler::trigger(state, uid, "slack");
+    Ok(HttpResponse::Accepted().json(summary))
 }
 
 #[utoipa::path(
@@ -102,28 +109,35 @@ pub(crate) async fn disconnect(
 ) -> Result<HttpResponse, AppError> {
     let uid = user_id(&user)?;
     pat::disconnect(&state, uid).await?;
-    hub_cache::invalidate_user(uid);
     Ok(HttpResponse::Ok().json(serde_json::json!({ "ok": true })))
 }
 
 #[utoipa::path(
     get, path = "/api/me/slack/channels", operation_id = "slackChannels", tag = "slack",
     security(("bearer" = [])),
-    responses((status = 200, body = [crate::slack::summary::SlackChannelOption]))
+    params(SlackChannelsQuery),
+    responses((status = 200, body = crate::slack::summary::SlackChannelsPage))
 )]
 /// GET /me/slack/channels — channels visible to the bot (for the picker).
 pub(crate) async fn channels(
     state: web::Data<AppState>,
     user: AuthUser,
+    query: web::Query<SlackChannelsQuery>,
 ) -> Result<HttpResponse, AppError> {
-    let channels = pat::list_channels(&state, user_id(&user)?).await?;
+    let channels = pat::list_channels(
+        &state,
+        user_id(&user)?,
+        query.cursor.as_deref(),
+        query.limit.unwrap_or(100),
+    )
+    .await?;
     Ok(HttpResponse::Ok().json(channels))
 }
 
 #[utoipa::path(
     put, path = "/api/me/slack/channels", operation_id = "slackSetChannels", tag = "slack",
     security(("bearer" = [])), request_body = SlackChannelsBody,
-    responses((status = 200, body = crate::slack::summary::SlackConnectionSummary))
+    responses((status = 202, body = crate::slack::summary::SlackConnectionSummary))
 )]
 /// PUT /me/slack/channels — set the watched channels.
 pub(crate) async fn set_channels(
@@ -132,9 +146,9 @@ pub(crate) async fn set_channels(
     body: web::Json<SlackChannelsBody>,
 ) -> Result<HttpResponse, AppError> {
     let uid = user_id(&user)?;
-    let summary = pat::set_channels(&state, uid, &body.channel_ids).await?;
-    hub_cache::invalidate_user(uid);
-    Ok(HttpResponse::Ok().json(summary))
+    let summary = pat::set_channels(&state, uid, &body.channels).await?;
+    crate::scheduler::trigger(state, uid, "slack");
+    Ok(HttpResponse::Accepted().json(summary))
 }
 
 #[utoipa::path(
@@ -188,8 +202,6 @@ pub(crate) async fn mark_read(
 ) -> Result<HttpResponse, AppError> {
     let uid = user_id(&user)?;
     data::mark_read(&state, uid, &body.ticket_key).await?;
-    hub_cache::invalidate_board(uid);
-    hub_cache::invalidate_inbox(uid);
     Ok(HttpResponse::Ok().json(serde_json::json!({ "ok": true })))
 }
 

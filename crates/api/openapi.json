@@ -574,7 +574,7 @@
         "type": "object"
       },
       "GithubDashboard": {
-        "description": "The full dashboard response (port of `GithubDashboardT`). Persisted as the\n`dashboard_snapshot` jsonb for cold-start SWR.",
+        "description": "The full dashboard response (port of `GithubDashboardT`).",
         "properties": {
           "account": {
             "$ref": "#/components/schemas/GithubAccountSummary"
@@ -1869,6 +1869,52 @@
         ],
         "type": "object"
       },
+      "HubSyncSource": {
+        "properties": {
+          "asOf": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lastError": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "scopeCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "source": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "state",
+          "scopeCount"
+        ],
+        "type": "object"
+      },
+      "HubSyncStatus": {
+        "properties": {
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/HubSyncSource"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "sources"
+        ],
+        "type": "object"
+      },
       "HubTicketCard": {
         "properties": {
           "assignee": {
@@ -2935,6 +2981,14 @@
             },
             "type": "array"
           },
+          "nextPage": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "selected": {
             "items": {
               "type": "string"
@@ -3080,15 +3134,36 @@
       },
       "SlackChannelsBody": {
         "properties": {
-          "channelIds": {
+          "channels": {
             "items": {
-              "type": "string"
+              "$ref": "#/components/schemas/SlackChannelRef"
             },
             "type": "array"
           }
         },
         "required": [
-          "channelIds"
+          "channels"
+        ],
+        "type": "object"
+      },
+      "SlackChannelsPage": {
+        "description": "One bounded channel-discovery page.",
+        "properties": {
+          "channels": {
+            "items": {
+              "$ref": "#/components/schemas/SlackChannelOption"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "channels"
         ],
         "type": "object"
       },
@@ -3329,7 +3404,7 @@
       "name": "Workflow",
       "url": "https://github.com/"
     },
-    "description": "Backend API for **Workflow** — a GitHub + Jira developer dashboard. This is the Rust (actix-web) port of the original TypeScript service and preserves the JSON contract endpoint-for-endpoint.\n\n## Authentication\nEvery `/me/**` route requires a Supabase-issued JWT in the `Authorization: Bearer <token>` header (the `bearer` security scheme). The public `/health` and `/hello/{name}` routes are unauthenticated.\n\n## Integrations\n- **GitHub** — connect a personal access token, then load the PR dashboard (stale-while-revalidate), enrich pull requests, browse branches / workflows / environments, and run write actions: dispatch a workflow, create / merge / close a PR, and manage repo + workflow favorites.\n- **Jira** — connect Cloud credentials (site URL + email + API token), then load the multi-queue dashboard, page queues, fetch issue detail, search by JQL, and run write actions: transition, comment, assign, log work, and create / edit issues.\n\n## Conventions\nResponse bodies are camelCase JSON with ISO-8601 millisecond UTC timestamps. Errors are returned as RFC 9457 `application/problem+json` carrying a stable `slug`, `title`, `detail`, and — where relevant — a `reason`.",
+    "description": "Backend API for **Workflow** — a GitHub + Jira developer dashboard. Provider state is synchronized asynchronously into durable database projections; dashboard, hub, inbox, and run reads never wait for provider fan-out calls. Credential and scope changes return `202 Accepted`; consumers can follow bootstrap and freshness through `GET /api/me/hub/sync-status`.\n\n## Authentication\nEvery `/me/**` route requires a Supabase-issued JWT in the `Authorization: Bearer <token>` header (the `bearer` security scheme). The public `/health` and `/hello/{name}` routes are unauthenticated.\n\n## Integrations\n- **GitHub** — connect a personal access token, then load the projected PR dashboard, enrich pull requests on demand, browse branches / workflows / environments, and run write actions: dispatch a workflow, create / merge / close a PR, and manage repo + workflow favorites.\n- **Jira** — connect Cloud credentials (site URL + email + API token), then load the projected multi-queue dashboard, page provider queues on demand, fetch issue detail, search by JQL, and run write actions: transition, comment, assign, log work, and create / edit issues.\n\n## Conventions\nResponse bodies are camelCase JSON with ISO-8601 millisecond UTC timestamps. Errors are returned as RFC 9457 `application/problem+json` carrying a stable `slug`, `title`, `detail`, and — where relevant — a `reason`.",
     "license": {
       "name": "Proprietary"
     },
@@ -3658,7 +3733,7 @@
             "bearer": []
           }
         ],
-        "summary": "DELETE /me/github — disconnect; clears caches.",
+        "summary": "DELETE /me/github — disconnect.",
         "tags": [
           "github"
         ]
@@ -3784,7 +3859,7 @@
             "bearer": []
           }
         ],
-        "summary": "GET /me/github/dashboard?tab= — SWR dashboard (counts + active queue).",
+        "summary": "GET /me/github/dashboard?tab= — projected dashboard (counts + active queue).",
         "tags": [
           "github"
         ]
@@ -4186,6 +4261,28 @@
     "/api/me/github/repos": {
       "get": {
         "operationId": "githubRepos",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "per_page",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -4221,7 +4318,7 @@
           "required": true
         },
         "responses": {
-          "200": {
+          "202": {
             "content": {
               "application/json": {
                 "schema": {
@@ -4237,7 +4334,7 @@
             "bearer": []
           }
         ],
-        "summary": "PUT /me/github/repos — set selection; nulls snapshot, clears caches.",
+        "summary": "PUT /me/github/repos — set the bounded projection scope and bootstrap it.",
         "tags": [
           "github"
         ]
@@ -4257,7 +4354,7 @@
           "required": true
         },
         "responses": {
-          "200": {
+          "202": {
             "content": {
               "application/json": {
                 "schema": {
@@ -4694,6 +4791,31 @@
           }
         ],
         "summary": "GET /me/hub/runs — actions-strip run pills (favorites first-class).",
+        "tags": [
+          "hub"
+        ]
+      }
+    },
+    "/api/me/hub/sync-status": {
+      "get": {
+        "operationId": "hubSyncStatus",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HubSyncStatus"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
           "hub"
         ]
@@ -5314,7 +5436,7 @@
           "required": true
         },
         "responses": {
-          "200": {
+          "202": {
             "content": {
               "application/json": {
                 "schema": {
@@ -5466,7 +5588,7 @@
           "required": true
         },
         "responses": {
-          "200": {
+          "202": {
             "content": {
               "application/json": {
                 "schema": {
@@ -5824,15 +5946,38 @@
     "/api/me/slack/channels": {
       "get": {
         "operationId": "slackChannels",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/SlackChannelOption"
-                  },
-                  "type": "array"
+                  "$ref": "#/components/schemas/SlackChannelsPage"
                 }
               }
             },
@@ -5862,7 +6007,7 @@
           "required": true
         },
         "responses": {
-          "200": {
+          "202": {
             "content": {
               "application/json": {
                 "schema": {
@@ -6007,7 +6152,7 @@
           "required": true
         },
         "responses": {
-          "200": {
+          "202": {
             "content": {
               "application/json": {
                 "schema": {

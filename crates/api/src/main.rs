@@ -21,7 +21,7 @@ mod telemetry;
 use std::sync::Arc;
 
 use actix_cors::Cors;
-use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer};
+use actix_web::{middleware::Compress, web, App, HttpRequest, HttpResponse, HttpServer};
 use wf_core::problem::ProblemDetails;
 use wf_core::{Config, TokenCipher};
 
@@ -95,7 +95,6 @@ async fn main() -> std::io::Result<()> {
         jwks,
         cipher,
         token_cache: Arc::new(crate::github::token_cache::TokenCache::default()),
-        dashboard_cache: Arc::new(crate::github::dashboard_cache::DashboardCache::default()),
     });
 
     scheduler::spawn(state.clone());
@@ -111,6 +110,7 @@ async fn main() -> std::io::Result<()> {
 
         App::new()
             .app_data(state.clone())
+            .wrap(Compress::default())
             .wrap(cors)
             .wrap(RequestTracing::new())
             .route("/healthz", web::get().to(healthz))

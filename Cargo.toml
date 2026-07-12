@@ -50,7 +50,15 @@ sea-orm = { version = "2.0.0-rc.42", default-features = false, features = [
 ] }
 
 # HTTP client + JWT (auth)
-reqwest = { version = "0.13", default-features = false, features = ["json", "rustls", "query"] }
+reqwest = { version = "0.13", default-features = false, features = [
+    "brotli",
+    "gzip",
+    "http2",
+    "json",
+    "query",
+    "rustls",
+    "zstd",
+] }
 # Shared outbound HTTP middleware: one pooled client + OTLP client spans
 # (reqwest-tracing `opentelemetry_0_32` aligns with opentelemetry 0.32 below).
 reqwest-middleware = { version = "0.5", features = ["json", "query"] }

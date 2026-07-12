@@ -2,7 +2,7 @@
 //! concurrently, that never fails the whole call — inaccessible repos surface
 //! as an `error` string in their own entry. Plus the plain REST branch-name list.
 
-use futures::future::join_all;
+use futures::stream::{self, StreamExt};
 use reqwest::Method;
 
 use super::branches_graphql::{
@@ -19,8 +19,9 @@ use crate::errors::GithubError;
 // one query trips GitHub's runtime guard (`RESOURCE_LIMITS_EXCEEDED`), which
 // nulls every repo's `refs` and makes the whole feature return empty. Keeping
 // each query single-repo stays under the limit; the queries still run
-// concurrently via `join_all` over the chunks below.
+// concurrently through the bounded stream below.
 const REPO_BATCH: usize = 1;
+const PROVIDER_CONCURRENCY: usize = 4;
 const WINDOW_DAYS: i64 = 30;
 
 fn error_repo(coord: &RepoCoord, message: &str) -> GithubRepoBranches {
@@ -114,27 +115,35 @@ pub async fn fetch_branch_prompts(
     repos: &[String],
 ) -> Vec<GithubRepoBranches> {
     let coords: Vec<RepoCoord> = repos.iter().filter_map(|r| to_coord(r)).collect();
-    tracing::debug!(
-        target: "branch_prompts",
-        login,
-        selected_repos = repos.len(),
-        valid_coords = coords.len(),
-        "fetch_branch_prompts: inputs"
-    );
-    if coords.is_empty() {
-        tracing::warn!(
-            target: "branch_prompts",
-            "no valid repo coordinates -> returning empty (is any repo selected?)"
-        );
+    if !has_branch_inputs(login, repos.len(), coords.len()) {
         return vec![];
     }
     let client = GithubClient::new(token);
     let cutoff_ms =
         chrono::Utc::now().timestamp_millis() - WINDOW_DAYS * 24 * 60 * 60 * 1000;
-    let batches =
-        join_all(coords.chunks(REPO_BATCH).map(|g| run_branch_batch(&client, g, login, cutoff_ms)))
-            .await;
+    let batches = stream::iter(coords.chunks(REPO_BATCH))
+        .map(|group| run_branch_batch(&client, group, login, cutoff_ms))
+        .buffered(PROVIDER_CONCURRENCY)
+        .collect::<Vec<_>>()
+        .await;
     batches.into_iter().flatten().collect()
+}
+
+fn has_branch_inputs(login: &str, selected: usize, valid: usize) -> bool {
+    tracing::debug!(
+        target: "branch_prompts",
+        login,
+        selected_repos = selected,
+        valid_coords = valid,
+        "fetch_branch_prompts: inputs"
+    );
+    if valid == 0 {
+        tracing::warn!(
+            target: "branch_prompts",
+            "no valid repo coordinates -> returning empty (is any repo selected?)"
+        );
+    }
+    valid > 0
 }
 
 #[derive(serde::Deserialize)]

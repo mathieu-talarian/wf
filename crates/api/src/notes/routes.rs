@@ -8,7 +8,6 @@ use wf_db::tables::{note_links, notes, reminders};
 
 use crate::auth::AuthUser;
 use crate::error::AppError;
-use crate::hub::cache as hub_cache;
 use crate::notes::parse;
 use crate::state::AppState;
 
@@ -169,9 +168,6 @@ pub(crate) async fn put_note(
         })
         .collect();
     reminders::sync_for_ticket(&state.db, user_id, &body.ticket_key, inputs).await?;
-    hub_cache::invalidate_board(user_id);
-    hub_cache::invalidate_inbox(user_id);
-
     let detail = note_detail(&state, user_id, &body.ticket_key).await?;
     Ok(HttpResponse::Ok().json(detail))
 }
@@ -208,8 +204,6 @@ pub(crate) async fn reminder_done(
     let row = reminders::set_done(&state.db, uid, &body.id)
         .await?
         .ok_or_else(|| AppError::not_found("Unknown reminder id."))?;
-    hub_cache::invalidate_board(uid);
-    hub_cache::invalidate_inbox(uid);
     Ok(HttpResponse::Ok().json(reminder_of(row)))
 }
 
@@ -230,8 +224,6 @@ pub(crate) async fn reminder_snooze(
     let row = reminders::snooze(&state.db, uid, &body.id, until)
         .await?
         .ok_or_else(|| AppError::not_found("Unknown reminder id."))?;
-    hub_cache::invalidate_board(uid);
-    hub_cache::invalidate_inbox(uid);
     Ok(HttpResponse::Ok().json(reminder_of(row)))
 }
 

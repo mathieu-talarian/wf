@@ -5,9 +5,11 @@
 
 use std::collections::HashMap;
 
-use futures::future::join_all;
+use futures::stream::{self, StreamExt};
 use reqwest::Method;
 use serde::Deserialize;
+
+const PROVIDER_CONCURRENCY: usize = 4;
 
 use super::branches_graphql::{to_coord, RepoCoord};
 use super::types::{GithubRepoWorkflows, GithubWorkflowSummary};
@@ -47,7 +49,7 @@ fn error_repo(coord: &RepoCoord) -> GithubRepoWorkflows {
 async fn fetch_repo_workflows(client: &GithubClient, coord: &RepoCoord) -> GithubRepoWorkflows {
     let path = format!("/repos/{}/{}/actions/workflows", coord.owner, coord.name);
     let result: Option<ApiWorkflows> = async {
-        let resp = client.request(Method::GET, &path).query(&[("per_page", "100")]).send().await.ok()?;
+        let resp = client.request(Method::GET, &path).query(&[("per_page", "50")]).send().await.ok()?;
         if !resp.status().is_success() {
             return None;
         }
@@ -84,7 +86,11 @@ pub async fn fetch_workflows(token: &str, repos: &[String]) -> Vec<GithubRepoWor
         return vec![];
     }
     let client = GithubClient::new(token);
-    join_all(coords.iter().map(|c| fetch_repo_workflows(&client, c))).await
+    stream::iter(coords.iter())
+        .map(|coord| fetch_repo_workflows(&client, coord))
+        .buffered(PROVIDER_CONCURRENCY)
+        .collect()
+        .await
 }
 
 #[derive(Deserialize)]

@@ -13,7 +13,6 @@ use crate::error::AppError;
 use wf_db::tables::github_pat_connections as github_pat;
 
 use crate::github::{activity, dashboard, pat};
-use crate::hub::cache as hub_cache;
 use crate::state::AppState;
 
 #[derive(Deserialize, utoipa::ToSchema)]
@@ -34,6 +33,13 @@ pub(crate) struct QueueQuery {
 #[derive(Deserialize, utoipa::ToSchema)]
 pub(crate) struct ReposBody {
     repos: Vec<String>,
+}
+
+#[derive(Deserialize, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
+pub(crate) struct RepoPageQuery {
+    page: Option<u16>,
+    per_page: Option<u16>,
 }
 
 #[derive(Deserialize)]
@@ -142,7 +148,7 @@ pub(crate) async fn status(
 #[utoipa::path(
     post, path = "/api/me/github/token", operation_id = "githubConnect", tag = "github",
     security(("bearer" = [])), request_body = TokenBody,
-    responses((status = 200, body = crate::github::summary::GithubConnectionSummary))
+    responses((status = 202, body = crate::github::summary::GithubConnectionSummary))
 )]
 /// POST /me/github/token — validate against GitHub, then store.
 pub(crate) async fn connect(
@@ -152,8 +158,8 @@ pub(crate) async fn connect(
 ) -> Result<HttpResponse, AppError> {
     let uid = user_id(&user)?;
     let summary = pat::connect(&state, uid, body.token.trim()).await?;
-    hub_cache::invalidate_user(uid);
-    Ok(HttpResponse::Ok().json(summary))
+    crate::scheduler::trigger(state, uid, "github");
+    Ok(HttpResponse::Accepted().json(summary))
 }
 
 #[utoipa::path(
@@ -175,14 +181,13 @@ pub(crate) async fn validate(
     security(("bearer" = [])),
     responses((status = 200, body = crate::dto::DisconnectedResponse))
 )]
-/// DELETE /me/github — disconnect; clears caches.
+/// DELETE /me/github — disconnect.
 pub(crate) async fn disconnect(
     state: web::Data<AppState>,
     user: AuthUser,
 ) -> Result<HttpResponse, AppError> {
     let uid = user_id(&user)?;
     pat::disconnect(&state, uid).await?;
-    hub_cache::invalidate_user(uid);
     Ok(HttpResponse::Ok().json(serde_json::json!({ "disconnected": true })))
 }
 
@@ -192,23 +197,13 @@ pub(crate) async fn disconnect(
     params(("tab" = Option<String>, Query, description = "Queue tab (default assigned)")),
     responses((status = 200, body = wf_github::GithubDashboard))
 )]
-/// GET /me/github/dashboard?tab= — SWR dashboard (counts + active queue).
+/// GET /me/github/dashboard?tab= — projected dashboard (counts + active queue).
 pub(crate) async fn dashboard_route(
     state: web::Data<AppState>,
     user: AuthUser,
     q: web::Query<DashboardQuery>,
 ) -> Result<HttpResponse, AppError> {
     let uid = user_id(&user)?;
-
-    // Opportunistic tick hint (A1 spec §4.3): pull this user's scopes forward
-    // so the next tick prioritizes them. Fire-and-forget; never blocks reads.
-    let mark_db = state.db.clone();
-    let mark_user = uid;
-    actix_web::rt::spawn(async move {
-        if let Err(e) = wf_db::tables::sync_state::mark_user_due(&mark_db, mark_user).await {
-            tracing::debug!(error = %e, "mark_user_due failed");
-        }
-    });
 
     let tab = q
         .tab
@@ -240,23 +235,30 @@ pub(crate) async fn queue_route(
 #[utoipa::path(
     get, path = "/api/me/github/repos", operation_id = "githubRepos", tag = "github",
     security(("bearer" = [])),
-    responses((status = 200, body = crate::github::dashboard::RepoSelection))
+    params(RepoPageQuery), responses((status = 200, body = crate::github::dashboard::RepoSelection))
 )]
 /// GET /me/github/repos — available repos + current selection.
 pub(crate) async fn repos_route(
     state: web::Data<AppState>,
     user: AuthUser,
+    query: web::Query<RepoPageQuery>,
 ) -> Result<HttpResponse, AppError> {
-    let r = dashboard::list_repos(&state, user_id(&user)?).await?;
+    let r = dashboard::list_repos(
+        &state,
+        user_id(&user)?,
+        query.page.unwrap_or(1),
+        query.per_page.unwrap_or(50),
+    )
+    .await?;
     Ok(HttpResponse::Ok().json(r))
 }
 
 #[utoipa::path(
     put, path = "/api/me/github/repos", operation_id = "githubSetRepos", tag = "github",
     security(("bearer" = [])), request_body = ReposBody,
-    responses((status = 200, body = crate::github::summary::GithubConnectionSummary))
+    responses((status = 202, body = crate::github::summary::GithubConnectionSummary))
 )]
-/// PUT /me/github/repos — set selection; nulls snapshot, clears caches.
+/// PUT /me/github/repos — set the bounded projection scope and bootstrap it.
 pub(crate) async fn set_repos_route(
     state: web::Data<AppState>,
     user: AuthUser,
@@ -264,8 +266,8 @@ pub(crate) async fn set_repos_route(
 ) -> Result<HttpResponse, AppError> {
     let uid = user_id(&user)?;
     let s = dashboard::set_selected_repos(&state, uid, &body.repos).await?;
-    hub_cache::invalidate_user(uid);
-    Ok(HttpResponse::Ok().json(s))
+    crate::scheduler::trigger(state, uid, "github");
+    Ok(HttpResponse::Accepted().json(s))
 }
 
 #[utoipa::path(
@@ -442,8 +444,6 @@ pub(crate) async fn dispatch_route(
         &body.inputs,
     )
     .await?;
-    hub_cache::invalidate_board(uid);
-    hub_cache::invalidate_runs(uid);
     Ok(HttpResponse::Ok().json(serde_json::json!({ "ok": true })))
 }
 
@@ -485,8 +485,6 @@ pub(crate) async fn rerun_route(
 ) -> Result<HttpResponse, AppError> {
     let uid = user_id(&user)?;
     activity::rerun(&state, uid, full_repo_ref(&body.repo)?, body.run_id).await?;
-    hub_cache::invalidate_board(uid);
-    hub_cache::invalidate_runs(uid);
     Ok(HttpResponse::Ok().json(serde_json::json!({ "ok": true })))
 }
 
@@ -611,8 +609,6 @@ pub(crate) async fn set_favorites_route(
     let r =
         github_pat::set_repo_favorites(&state.db, uid, &body.repo_full_name, &body.workflow_ids)
             .await?;
-    hub_cache::invalidate_board(uid);
-    hub_cache::invalidate_runs(uid);
     Ok(HttpResponse::Ok().json(r))
 }
 

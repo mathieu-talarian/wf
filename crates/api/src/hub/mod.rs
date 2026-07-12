@@ -3,8 +3,8 @@
 //! actions-strip runs, and manual ticket↔code links.
 
 pub mod board;
-pub mod cache;
 pub mod inbox;
 pub mod routes;
 pub mod runs;
+pub mod sync_status;
 pub mod types;

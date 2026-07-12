@@ -8,7 +8,7 @@ use wf_db::tables::ticket_links;
 use crate::auth::AuthUser;
 use crate::error::AppError;
 use crate::hub::types::HubLinkBody;
-use crate::hub::{board, cache, inbox, runs};
+use crate::hub::{board, inbox, runs, sync_status};
 use crate::state::AppState;
 
 fn user_id(user: &AuthUser) -> Result<Uuid, AppError> {
@@ -88,7 +88,6 @@ pub(crate) async fn link_route(
         body.branch.as_deref(),
     )
     .await?;
-    cache::invalidate_board(uid);
     Ok(HttpResponse::Ok().json(serde_json::json!({ "ok": true })))
 }
 
@@ -129,7 +128,6 @@ pub(crate) async fn unlink_route(
         query.branch.as_deref(),
     )
     .await?;
-    cache::invalidate_board(uid);
     Ok(HttpResponse::Ok().json(serde_json::json!({ "ok": true })))
 }
 
@@ -163,12 +161,26 @@ pub(crate) async fn runs_route(
     json_or_304(&req, &runs)
 }
 
+#[utoipa::path(
+    get, path = "/api/me/hub/sync-status", operation_id = "hubSyncStatus", tag = "hub",
+    security(("bearer" = [])),
+    responses((status = 200, body = crate::hub::types::HubSyncStatus))
+)]
+pub(crate) async fn sync_status_route(
+    state: web::Data<AppState>,
+    user: AuthUser,
+) -> Result<HttpResponse, AppError> {
+    let status = sync_status::status(&state, user_id(&user)?).await?;
+    Ok(HttpResponse::Ok().json(status))
+}
+
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.route("/me/hub/board", web::get().to(board_route))
         .route("/me/hub/links", web::post().to(link_route))
         .route("/me/hub/links", web::delete().to(unlink_route))
         .route("/me/hub/inbox", web::get().to(inbox_route))
-        .route("/me/hub/runs", web::get().to(runs_route));
+        .route("/me/hub/runs", web::get().to(runs_route))
+        .route("/me/hub/sync-status", web::get().to(sync_status_route));
 }
 
 #[cfg(test)]

@@ -8,7 +8,7 @@ use sea_orm::sea_query::OnConflict;
 use sea_orm::ActiveValue::{NotSet, Set};
 use sea_orm::{
     ColumnTrait, ConnectionTrait, DatabaseConnection, DbBackend, DbErr, EntityTrait,
-    FromQueryResult, QueryFilter, Statement,
+    FromQueryResult, QueryFilter, QueryOrder, Statement,
 };
 
 use super::entity as sync_state;
@@ -207,14 +207,31 @@ pub async fn complete_err(
     db.execute_raw(stmt).await.map(|_| ())
 }
 
-/// Opportunistic hook (spec §4.3): pull every scope of this user forward to
-/// "due now" so the next tick prioritizes them. No-op for already-due rows.
-pub async fn mark_user_due(db: &DatabaseConnection, user_id: Uuid) -> Result<(), DbErr> {
+/// Pull one provider's scopes for this user forward to "due now" after a
+/// connection/scope mutation. No-op for already-due rows.
+pub async fn mark_source_due(
+    db: &DatabaseConnection,
+    user_id: Uuid,
+    source: &str,
+) -> Result<(), DbErr> {
     let stmt = Statement::from_sql_and_values(
         DbBackend::Postgres,
         "UPDATE sync_state SET next_poll_at = now() \
-         WHERE user_id = $1 AND next_poll_at > now()",
-        [user_id.into()],
+         WHERE user_id = $1 AND source = $2 AND next_poll_at > now()",
+        [user_id.into(), source.into()],
     );
     db.execute_raw(stmt).await.map(|_| ())
+}
+
+/// All synchronization scopes for a user, used by the public freshness view.
+pub async fn list_user_scopes(
+    db: &DatabaseConnection,
+    user_id: Uuid,
+) -> Result<Vec<sync_state::Model>, DbErr> {
+    sync_state::Entity::find()
+        .filter(sync_state::Column::UserId.eq(user_id))
+        .order_by_asc(sync_state::Column::Source)
+        .order_by_asc(sync_state::Column::ScopeKey)
+        .all(db)
+        .await
 }

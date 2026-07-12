@@ -28,7 +28,7 @@ pub fn to_coord(full_name: &str) -> Option<RepoCoord> {
     })
 }
 
-const REFS_PER_REPO: usize = 100;
+const REFS_PER_REPO: usize = 30;
 
 fn repo_fields() -> String {
     format!(

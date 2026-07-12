@@ -5,14 +5,15 @@
 
 use sea_orm::prelude::Uuid;
 use wf_core::Sealed;
-use wf_db::tables::jira_pat_connections as jira;
+use wf_db::tables::{jira_issues, jira_pat_connections as jira};
 use wf_jira::{
-    create_meta as jira_create_meta, edit_meta as jira_edit_meta, fetch_dashboard_queues,
-    fetch_issue_detail, fetch_issue_page, fetch_queue_page, list_boards, list_issue_types,
+    create_meta as jira_create_meta, edit_meta as jira_edit_meta, fetch_issue_detail,
+    fetch_issue_page, fetch_queue_page, list_boards, list_issue_types,
     list_projects, list_transitions, search_users, sprint_issues, AssignableQuery, JiraAccountSummary,
     JiraBoard, JiraClient, JiraCreateMeta, JiraCreds, JiraDashboard, JiraEditMeta, JiraIssueDetail,
-    JiraIssuePage, JiraIssueType, JiraNotConnected, JiraProject, JiraQueueKey, JiraTransition,
-    JiraUser, QueueJqlCtx, SUMMARY_FIELDS,
+    JiraIssuePage, JiraIssueSummary, JiraIssueType, JiraNamedIcon, JiraNotConnected, JiraProject,
+    JiraQueueKey, JiraQueueResult, JiraStatus, JiraTransition, JiraUser, QueueJqlCtx, QUEUE_KEYS,
+    SUMMARY_FIELDS,
 };
 
 use crate::error::AppError;
@@ -83,10 +84,14 @@ pub async fn dashboard(state: &AppState, user_id: Uuid) -> Result<JiraDashboard,
     let Some(row) = jira::select_row(&state.db, user_id).await? else {
         return Ok(disconnected_dashboard());
     };
-    let client = client_for(state, &row)?;
     let ctx = ctx_of(&row);
-    let queues = fetch_dashboard_queues(&client, &ctx).await;
-    let _ = jira::touch_last_used(&state.db, user_id).await;
+    let rows = jira_issues::list_recent(&state.db, user_id, &ctx.selected_projects, 500).await?;
+    let issues: Vec<JiraIssueSummary> = rows.into_iter().map(issue_summary).collect();
+    let queues = QUEUE_KEYS
+        .into_iter()
+        .map(|key| projected_queue(key, &issues, &row.display_name))
+        .collect();
+    spawn_touch_last_used(state, user_id);
     Ok(JiraDashboard {
         account: JiraAccountSummary {
             connected: true,
@@ -97,6 +102,60 @@ pub async fn dashboard(state: &AppState, user_id: Uuid) -> Result<JiraDashboard,
         queues,
         selected_projects: ctx.selected_projects,
     })
+}
+
+fn spawn_touch_last_used(state: &AppState, user_id: Uuid) {
+    let db = state.db.clone();
+    tokio::spawn(async move {
+        let _ = jira::touch_last_used(&db, user_id).await;
+    });
+}
+
+fn projected_queue(
+    key: JiraQueueKey,
+    issues: &[JiraIssueSummary],
+    display_name: &str,
+) -> JiraQueueResult {
+    let selected: Vec<_> = issues
+        .iter()
+        .filter(|issue| queue_match(issue, key, display_name))
+        .take(50)
+        .cloned()
+        .collect();
+    JiraQueueResult {
+        key,
+        approximate_total: Some(selected.len() as i64),
+        issues: selected,
+        next_cursor: None,
+        is_last: true,
+        error: None,
+    }
+}
+
+fn queue_match(issue: &JiraIssueSummary, key: JiraQueueKey, display_name: &str) -> bool {
+    match key {
+        JiraQueueKey::Assigned => issue.assignee.as_ref().is_some_and(|u| u.display_name == display_name),
+        JiraQueueKey::ActiveSprint => issue.status.category != "done",
+        JiraQueueKey::PreviouslyMine | JiraQueueKey::Reported | JiraQueueKey::Watching => false,
+    }
+}
+
+fn issue_summary(row: jira_issues::Model) -> JiraIssueSummary {
+    JiraIssueSummary {
+        key: row.issue_key,
+        summary: row.summary,
+        status: JiraStatus { name: row.status_name, category: row.status_category },
+        issue_type: JiraNamedIcon { name: row.issue_type_name.unwrap_or_default(), icon_url: None },
+        priority: row.priority_name.map(|name| JiraNamedIcon { name, icon_url: None }),
+        assignee: row.assignee_name.map(projected_user),
+        project_key: row.project,
+        updated: row.updated_at.to_rfc3339(),
+        url: row.url,
+    }
+}
+
+fn projected_user(display_name: String) -> JiraUser {
+    JiraUser { account_id: String::new(), display_name, avatar_url: None, email_address: None }
 }
 
 pub async fn queue(

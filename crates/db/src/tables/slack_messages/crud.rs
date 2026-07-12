@@ -7,7 +7,8 @@ use sea_orm::prelude::{DateTimeWithTimeZone, Uuid};
 use sea_orm::sea_query::{Expr, OnConflict};
 use sea_orm::ActiveValue::{NotSet, Set};
 use sea_orm::{
-    ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter, QueryOrder, QuerySelect,
+    ColumnTrait, ConnectionTrait, DatabaseConnection, DbBackend, DbErr, EntityTrait, QueryFilter,
+    QueryOrder, QueryResult, Statement,
 };
 
 use super::entity as msg;
@@ -26,6 +27,18 @@ pub struct UpsertSlackMessageInput {
     /// Baseline backfills insert as read (no inbox flood); live polls as unread.
     pub is_read: bool,
     pub posted_at: DateTimeWithTimeZone,
+}
+
+#[derive(Debug, Clone)]
+pub struct UnreadTicketSummary {
+    pub ticket_key: String,
+    pub channel_id: String,
+    pub channel_name: String,
+    pub ts: String,
+    pub thread_ts: String,
+    pub body: String,
+    pub posted_at: DateTimeWithTimeZone,
+    pub unread: i64,
 }
 
 /// Inserts a batch of polled messages; re-polled rows update their mutable
@@ -124,38 +137,66 @@ pub async fn unread_counts(
     db: &DatabaseConnection,
     user_id: Uuid,
 ) -> Result<HashMap<String, i64>, DbErr> {
-    let keys: Vec<Option<String>> = msg::Entity::find()
-        .select_only()
-        .column(msg::Column::TicketKey)
-        .filter(msg::Column::UserId.eq(user_id))
-        .filter(msg::Column::IsRead.eq(false))
-        .filter(msg::Column::IsBot.eq(false))
-        .filter(msg::Column::TicketKey.is_not_null())
-        .into_tuple()
-        .all(db)
-        .await?;
-    let mut counts = HashMap::new();
-    for key in keys.into_iter().flatten() {
-        *counts.entry(key).or_insert(0) += 1;
-    }
-    Ok(counts)
+    let stmt = Statement::from_sql_and_values(
+        DbBackend::Postgres,
+        UNREAD_COUNTS_SQL,
+        [user_id.into()],
+    );
+    db.query_all_raw(stmt)
+        .await?
+        .into_iter()
+        .map(unread_count)
+        .collect()
 }
 
-/// Latest unread non-bot messages (newest first) — the inbox's QA items.
-pub async fn list_unread(
+const UNREAD_COUNTS_SQL: &str = r#"
+SELECT ticket_key, COUNT(*)::bigint AS unread
+FROM slack_messages
+WHERE user_id = $1 AND is_read = false AND is_bot = false AND ticket_key IS NOT NULL
+GROUP BY ticket_key
+"#;
+
+fn unread_count(row: QueryResult) -> Result<(String, i64), DbErr> {
+    Ok((row.try_get("", "ticket_key")?, row.try_get("", "unread")?))
+}
+
+/// Latest unread non-bot message and count for each ticket.
+pub async fn unread_ticket_summaries(
     db: &DatabaseConnection,
     user_id: Uuid,
     limit: u64,
-) -> Result<Vec<msg::Model>, DbErr> {
-    msg::Entity::find()
-        .filter(msg::Column::UserId.eq(user_id))
-        .filter(msg::Column::IsRead.eq(false))
-        .filter(msg::Column::IsBot.eq(false))
-        .filter(msg::Column::TicketKey.is_not_null())
-        .order_by_desc(msg::Column::PostedAt)
-        .limit(limit)
-        .all(db)
-        .await
+) -> Result<Vec<UnreadTicketSummary>, DbErr> {
+    let stmt = Statement::from_sql_and_values(
+        DbBackend::Postgres,
+        UNREAD_TICKETS_SQL,
+        [user_id.into(), (limit.min(100) as i64).into()],
+    );
+    db.query_all_raw(stmt).await?.into_iter().map(unread_ticket).collect()
+}
+
+const UNREAD_TICKETS_SQL: &str = r#"
+WITH ranked AS (
+  SELECT ticket_key, channel_id, channel_name, ts, thread_ts, body, posted_at,
+         COUNT(*) OVER (PARTITION BY ticket_key)::bigint AS unread,
+         ROW_NUMBER() OVER (PARTITION BY ticket_key ORDER BY posted_at DESC, id DESC) AS rank
+  FROM slack_messages
+  WHERE user_id = $1 AND is_read = false AND is_bot = false AND ticket_key IS NOT NULL
+)
+SELECT ticket_key, channel_id, channel_name, ts, thread_ts, body, posted_at, unread
+FROM ranked WHERE rank = 1 ORDER BY posted_at DESC LIMIT $2
+"#;
+
+fn unread_ticket(row: QueryResult) -> Result<UnreadTicketSummary, DbErr> {
+    Ok(UnreadTicketSummary {
+        ticket_key: row.try_get("", "ticket_key")?,
+        channel_id: row.try_get("", "channel_id")?,
+        channel_name: row.try_get("", "channel_name")?,
+        ts: row.try_get("", "ts")?,
+        thread_ts: row.try_get("", "thread_ts")?,
+        body: row.try_get("", "body")?,
+        posted_at: row.try_get("", "posted_at")?,
+        unread: row.try_get("", "unread")?,
+    })
 }
 
 pub async fn mark_read(
@@ -170,4 +211,17 @@ pub async fn mark_read(
         .exec(db)
         .await
         .map(|_| ())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unread_queries_aggregate_inside_postgres() {
+        assert!(UNREAD_COUNTS_SQL.contains("GROUP BY ticket_key"));
+        assert!(UNREAD_TICKETS_SQL.contains("COUNT(*) OVER (PARTITION BY ticket_key)"));
+        assert!(UNREAD_TICKETS_SQL.contains("ROW_NUMBER() OVER"));
+        assert!(UNREAD_TICKETS_SQL.contains("WHERE rank = 1"));
+    }
 }

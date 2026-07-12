@@ -182,6 +182,8 @@ mod tests {
             closed_at: Some(Utc.timestamp_opt(300, 0).unwrap()),
             merged_at: merged.then(|| Utc.timestamp_opt(300, 0).unwrap()),
             user: Some(GithubActor { login: "octocat".into() }),
+            assignees: vec![],
+            requested_reviewers: vec![],
         }
     }
 
@@ -217,6 +219,9 @@ mod tests {
             status_id: Some(status_id.into()),
             status_name: Some("In Progress".into()),
             status_category: Some("indeterminate".into()),
+            assignee_name: None,
+            priority_name: None,
+            issue_type_name: None,
             created: Some("2026-06-01T10:00:00.000+0200".into()),
             updated: Some("2026-06-02T11:00:00.000+0200".into()),
             url: "https://x/browse/PROJ-1".into(),

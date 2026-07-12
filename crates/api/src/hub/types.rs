@@ -221,3 +221,19 @@ pub struct HubRunPill {
     pub url: String,
     pub is_favorite: bool,
 }
+
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct HubSyncStatus {
+    pub sources: Vec<HubSyncSource>,
+}
+
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct HubSyncSource {
+    pub source: String,
+    pub state: String,
+    pub as_of: Option<String>,
+    pub last_error: Option<String>,
+    pub scope_count: i64,
+}

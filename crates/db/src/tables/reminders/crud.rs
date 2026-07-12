@@ -8,7 +8,8 @@ use sea_orm::prelude::{DateTimeWithTimeZone, Uuid};
 use sea_orm::sea_query::{Expr, OnConflict};
 use sea_orm::ActiveValue::Set;
 use sea_orm::{
-    ColumnTrait, DatabaseConnection, DbErr, EntityTrait, ExprTrait, QueryFilter, QueryOrder,
+    ColumnTrait, ConnectionTrait, DatabaseConnection, DbBackend, DbErr, EntityTrait, ExprTrait,
+    QueryFilter, QueryOrder, QueryResult, QuerySelect, Statement,
 };
 
 use super::entity as rem;
@@ -106,6 +107,7 @@ pub async fn list(
 pub async fn list_due(
     db: &DatabaseConnection,
     user_id: Uuid,
+    limit: u64,
 ) -> Result<Vec<rem::Model>, DbErr> {
     let now: DateTimeWithTimeZone = chrono::Utc::now().into();
     rem::Entity::find()
@@ -118,6 +120,7 @@ pub async fn list_due(
                 .or(rem::Column::SnoozedUntil.lte(now)),
         )
         .order_by_asc(rem::Column::DueAt)
+        .limit(std::cmp::min(limit, 100))
         .all(db)
         .await
 }
@@ -127,12 +130,28 @@ pub async fn due_counts(
     db: &DatabaseConnection,
     user_id: Uuid,
 ) -> Result<HashMap<String, i64>, DbErr> {
-    let due = list_due(db, user_id).await?;
-    let mut counts = HashMap::new();
-    for reminder in due {
-        *counts.entry(reminder.ticket_key).or_insert(0) += 1;
-    }
-    Ok(counts)
+    let stmt = Statement::from_sql_and_values(
+        DbBackend::Postgres,
+        DUE_COUNTS_SQL,
+        [user_id.into()],
+    );
+    db.query_all_raw(stmt)
+        .await?
+        .into_iter()
+        .map(due_count)
+        .collect()
+}
+
+const DUE_COUNTS_SQL: &str = r#"
+SELECT ticket_key, COUNT(*)::bigint AS due
+FROM reminders
+WHERE user_id = $1 AND state = 'pending' AND due_at <= now()
+  AND (snoozed_until IS NULL OR snoozed_until <= now())
+GROUP BY ticket_key
+"#;
+
+fn due_count(row: QueryResult) -> Result<(String, i64), DbErr> {
+    Ok((row.try_get("", "ticket_key")?, row.try_get("", "due")?))
 }
 
 pub async fn set_done(
@@ -162,4 +181,16 @@ pub async fn snooze(
         .exec(db)
         .await?;
     rem::Entity::find_by_id((user_id, id.to_string())).one(db).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn due_counts_are_grouped_in_postgres() {
+        assert!(DUE_COUNTS_SQL.contains("COUNT(*)::bigint"));
+        assert!(DUE_COUNTS_SQL.contains("GROUP BY ticket_key"));
+        assert!(DUE_COUNTS_SQL.contains("snoozed_until <= now()"));
+    }
 }

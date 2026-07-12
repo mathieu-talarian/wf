@@ -19,11 +19,15 @@ pub use activity::{
     GithubWorkflowInputs, GithubWorkflowSummary,
 };
 pub use client::{parse_repo_ref, GithubClient, RepoRef};
-pub use poll::{list_pulls_page, list_runs_any_status, list_workflow_runs_page, GithubActor, PolledPullRequest, PolledWorkflowRun};
+pub use poll::{
+    list_pulls_page, list_runs_any_status, list_workflow_runs_page, GithubActor, PolledPullHead,
+    PolledPullRequest, PolledWorkflowRun,
+};
 pub use dashboard::enrich::{enrich_pull_request, enrich_pull_requests};
 pub use dashboard::types::{
     GithubAccountSummary, GithubApprovalState, GithubCheckState, GithubDashboard,
-    GithubPullEnrichmentResult, GithubPullRef, GithubPullRequestBasic, GithubPullRequestEnrichment,
+    GithubDashboardActor, GithubDashboardRepository, GithubPullEnrichmentResult, GithubPullRef,
+    GithubPullRequestBasic, GithubPullRequestEnrichment, GithubPullRequestQueue, GithubQueueCount,
     GithubQueueKey, GithubRepoOption, GithubRequestedReviewer, GithubRequiredCheck,
     GithubWorkflowRunSummary,
 };
