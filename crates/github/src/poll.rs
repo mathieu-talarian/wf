@@ -6,9 +6,11 @@
 //! Documented limitation (spec §6.2 deviation, plan header): >50 updates per
 //! scope per tick lose the older ones; dedup keeps replays safe.
 
+use std::error::Error;
+
 use chrono::{DateTime, Utc};
 use reqwest::Method;
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 
 use crate::client::GithubClient;
 use crate::errors::GithubError;
@@ -45,6 +47,14 @@ struct RunsResponse {
     workflow_runs: Vec<PolledWorkflowRun>,
 }
 
+fn null_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de> + Default,
+{
+    Option::<T>::deserialize(deserializer).map(Option::unwrap_or_default)
+}
+
 /// Newest page of completed workflow runs for `owner/repo`.
 pub async fn list_workflow_runs_page(
     client: &GithubClient,
@@ -71,9 +81,9 @@ pub struct PolledPullRequest {
     pub closed_at: Option<DateTime<Utc>>,
     pub merged_at: Option<DateTime<Utc>>,
     pub user: Option<GithubActor>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_default")]
     pub assignees: Vec<GithubActor>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_default")]
     pub requested_reviewers: Vec<GithubActor>,
     #[serde(default)]
     pub head: Option<PolledPullHead>,
@@ -120,12 +130,51 @@ pub async fn list_pulls_page(
 async fn send_json<T: serde::de::DeserializeOwned>(
     req: reqwest_middleware::RequestBuilder,
 ) -> Result<T, GithubError> {
-    let resp = send_get_retry(req).await.map_err(|e| GithubError::Api(e.to_string()))?;
+    let decode_retry = req.try_clone();
+    let resp = send_checked(req).await?;
+    match resp.json().await {
+        Ok(body) => Ok(body),
+        Err(first) => retry_decode(decode_retry, first).await,
+    }
+}
+
+async fn send_checked(
+    req: reqwest_middleware::RequestBuilder,
+) -> Result<reqwest::Response, GithubError> {
+    let resp = send_get_retry(req)
+        .await
+        .map_err(|e| GithubError::Api(e.to_string()))?;
     let status = resp.status();
     if !status.is_success() {
         return Err(GithubError::Api(format!("poll HTTP {}", status.as_u16())));
     }
-    resp.json().await.map_err(|e| GithubError::Api(e.to_string()))
+    Ok(resp)
+}
+
+async fn retry_decode<T: serde::de::DeserializeOwned>(
+    retry: Option<reqwest_middleware::RequestBuilder>,
+    first: reqwest::Error,
+) -> Result<T, GithubError> {
+    let Some(retry) = retry else {
+        return Err(decode_error(first));
+    };
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    send_checked(retry)
+        .await?
+        .json()
+        .await
+        .map_err(decode_error)
+}
+
+fn decode_error(error: reqwest::Error) -> GithubError {
+    let mut message = error.to_string();
+    let mut source = error.source();
+    while let Some(cause) = source {
+        message.push_str(": ");
+        message.push_str(&cause.to_string());
+        source = cause.source();
+    }
+    GithubError::Api(message)
 }
 
 /// Transient statuses worth one retry (rate-limit / upstream blip).
@@ -159,6 +208,9 @@ async fn send_get_retry(req: reqwest_middleware::RequestBuilder) -> reqwest_midd
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+
     use super::*;
     use wiremock::matchers::{method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -219,5 +271,47 @@ mod tests {
         let bad = GithubClient::with_base("t", server.uri());
         let err = list_workflow_runs_page(&bad, "missing", "repo").await;
         assert!(err.is_err()); // 404 from unmatched mock
+    }
+
+    #[test]
+    fn parses_null_pull_collections() {
+        let pull = serde_json::json!({
+            "number": 7, "state": "open", "title": "Add feature",
+            "html_url": "https://github.com/o/r/pull/7", "draft": false,
+            "created_at": "2026-06-01T09:00:00Z", "updated_at": "2026-06-02T09:00:00Z",
+            "closed_at": null, "merged_at": null, "user": null,
+            "assignees": null, "requested_reviewers": null, "head": null
+        });
+        let pull: PolledPullRequest = serde_json::from_value(pull).unwrap();
+        assert!(pull.assignees.is_empty());
+        assert!(pull.requested_reviewers.is_empty());
+    }
+
+    #[tokio::test]
+    async fn retries_response_decode_errors() {
+        let server = MockServer::start().await;
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let responder_attempts = Arc::clone(&attempts);
+        Mock::given(method("GET"))
+            .and(path("/repos/o/r/pulls"))
+            .respond_with(decode_retry_responder(responder_attempts))
+            .expect(2)
+            .mount(&server)
+            .await;
+        let client = GithubClient::with_base("t", server.uri());
+        assert!(list_pulls_page(&client, "o", "r").await.unwrap().is_empty());
+        assert_eq!(attempts.load(Ordering::SeqCst), 2);
+    }
+
+    fn decode_retry_responder(
+        attempts: Arc<AtomicUsize>,
+    ) -> impl Fn(&wiremock::Request) -> ResponseTemplate {
+        move |_| {
+            if attempts.fetch_add(1, Ordering::SeqCst) == 0 {
+                ResponseTemplate::new(200).set_body_string("[")
+            } else {
+                ResponseTemplate::new(200).set_body_json(serde_json::json!([]))
+            }
+        }
     }
 }

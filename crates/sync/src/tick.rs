@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
-use futures::stream::{self, StreamExt, TryStreamExt};
+use futures::stream::{self, FuturesUnordered, StreamExt, TryStreamExt};
 use sea_orm::prelude::{DateTimeWithTimeZone, Uuid};
 use tracing::Instrument;
 use sea_orm::DbErr;
@@ -70,45 +70,64 @@ struct TickConnections {
     slack: HashMap<Uuid, StoredConnection<slack_conn::Model>>,
 }
 
+async fn initial_claims(db: &Db, opts: &TickOptions) -> Result<Vec<sync_state::Model>, TickError> {
+    let concurrency = opts.concurrency.max(1) as u64;
+    sync_state::claim_due(
+        db,
+        opts.batch.min(concurrency),
+        &opts.owner,
+        opts.lease_secs,
+    )
+    .await
+    .map_err(Into::into)
+}
+
+fn can_claim_more(summary: &TickSummary, opts: &TickOptions, deadline: Instant) -> bool {
+    Instant::now() < deadline && (summary.scopes_claimed as u64) < opts.batch
+}
+
+async fn claim_next(db: &Db, opts: &TickOptions) -> Result<Option<sync_state::Model>, TickError> {
+    let mut rows = sync_state::claim_due(db, 1, &opts.owner, opts.lease_secs).await?;
+    Ok(rows.pop())
+}
+
 /// One bounded tick (spec §4.2). Errors inside a scope are isolated (recorded
 /// + backed off); only DB-level failures abort the tick.
 pub async fn run_tick(db: &Db, cipher: &TokenCipher, opts: &TickOptions) -> Result<TickSummary, TickError> {
     let connections = reconcile_all(db, cipher).await?;
-    let claimed = sync_state::claim_due(db, opts.batch, &opts.owner, opts.lease_secs).await?;
-    let claimed_count = claimed.len();
     let deadline = Instant::now() + opts.budget;
-    // Independent scopes (SKIP LOCKED isolates them) poll concurrently, bounded so
-    // in-flight scopes can't exhaust the DB pool. Past the budget new scopes skip —
-    // their leases expire and are re-claimed next tick (spec §8).
-    let deltas: Vec<Result<Option<StepDelta>, TickError>> = stream::iter(claimed)
-        .map(|scope| poll_one(db, &connections, scope, opts, deadline))
-        .buffer_unordered(opts.concurrency.max(1))
-        .collect()
-        .await;
-    let mut summary = TickSummary { scopes_claimed: claimed_count, ..TickSummary::default() };
-    for delta in deltas {
-        if let Some(d) = delta? {
-            summary.apply(d);
+    let claimed = initial_claims(db, opts).await?;
+    let mut summary = TickSummary {
+        scopes_claimed: claimed.len(),
+        ..TickSummary::default()
+    };
+    let mut active = FuturesUnordered::new();
+    for scope in claimed {
+        active.push(poll_one(db, &connections, scope, opts));
+    }
+    while let Some(delta) = active.next().await {
+        summary.apply(delta?);
+        if can_claim_more(&summary, opts, deadline) {
+            let Some(scope) = claim_next(db, opts).await? else { continue };
+            summary.scopes_claimed += 1;
+            active.push(poll_one(db, &connections, scope, opts));
         }
     }
     Ok(summary)
 }
 
-/// Runs `step_scope` unless the tick budget is already spent (then the scope is
-/// skipped: its lease expires and it's re-claimed next tick). Owned `scope` keeps
-/// the concurrent futures free of borrows from the claimed batch.
+/// Runs one actively claimed scope. Owned `scope` keeps concurrent futures free
+/// of borrows from the claimed batch.
 async fn poll_one(
     db: &Db,
     connections: &TickConnections,
     scope: sync_state::Model,
     opts: &TickOptions,
-    deadline: Instant,
-) -> Result<Option<StepDelta>, TickError> {
-    if Instant::now() >= deadline {
-        return Ok(None);
-    }
+) -> Result<StepDelta, TickError> {
     let span = tracing::info_span!("tick.scope", source = %scope.source, scope = %scope.scope_key);
-    step_scope(db, connections, &scope, opts).instrument(span).await.map(Some)
+    step_scope(db, connections, &scope, opts)
+        .instrument(span)
+        .await
 }
 
 /// Polls one claimed scope, records the outcome on `sync_state`, and returns the
